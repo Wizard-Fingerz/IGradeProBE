@@ -4,11 +4,11 @@ from .models import StudentScript, ScriptPage
 class ScriptPageSerializer(serializers.ModelSerializer):
     class Meta:
         model = ScriptPage
-        fields = '__all__'
+        fields = ["page_number", "image", "extracted_text"]
 
 class StudentScriptSerializer(serializers.ModelSerializer):
-    pages = ScriptPageSerializer(many=True, read_only=True)
+    pages = ScriptPageSerializer(many=True)
 
     class Meta:
         model = StudentScript
-        fields = '__all__'
+        fields = ["id", "uploaded_at", "student_id", "pages"]
