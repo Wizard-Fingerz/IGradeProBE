@@ -138,7 +138,8 @@ CORS_ALLOWED_ORIGINS = [
 
 # settings.py
 CELERY_BROKER_URL = 'redis://127.0.0.1:6379/0'  # URL to your Redis server
-CELERY_RESULT_BACKEND = 'redis://127.0.0.1:6379/0'  # Optional: Backend for storing results
+# Optional: Backend for storing results
+CELERY_RESULT_BACKEND = 'redis://127.0.0.1:6379/0'
 
 # Internationalization
 # https://docs.djangoproject.com/en/5.1/topics/i18n/
@@ -157,8 +158,8 @@ AUTH_USER_MODEL = 'account.User'
 # settings.py
 
 MEDIA_URL = '/media/'
-MEDIA_ROOT = os.path.join(BASE_DIR, 'media')  # 'media' folder will be created in your project root
-
+# 'media' folder will be created in your project root
+MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
 
 # Static files (CSS, JavaScript, Images)
@@ -170,3 +171,10 @@ STATIC_URL = 'static/'
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+
+# Path to your credentials JSON file relative to BASE_DIR
+GOOGLE_APPLICATION_CREDENTIALS = os.path.join(BASE_DIR, 'jsn.json')
+
+
+GOOGLE_CLOUD_VISION_API_KEY = 'AIzaSyCMuO31qsBPL6_leDYpchfsIJ11vsEw73I'
