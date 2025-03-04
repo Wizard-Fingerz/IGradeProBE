@@ -1,7 +1,7 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from app.exams.views import ExamCreateView, ExamDetailView, ExamUpdateView, ExamViewSet
-from app.ocr.views import BulkUploadScriptView, ScriptOutputView, UploadScriptView
+from app.ocr.views import BulkUploadScriptView, ScriptOutputView, StudentScriptViewSet, UploadScriptView
 from app.questions.views import SubjectQuestionViewSet
 from app.subjects.views import SubjectViewSet
 
@@ -14,6 +14,7 @@ router.register(r'subjects', SubjectViewSet, basename='subjects')
 # router.register(r'exam-create', ExamCreateView, basename='create-exam')
 router.register(r'subject-questions', SubjectQuestionViewSet,
                 basename='subject-question')
+router.register(r'student-scripts', StudentScriptViewSet, basename='student-script')
 
 
 urlpatterns = [

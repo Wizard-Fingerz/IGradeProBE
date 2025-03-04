@@ -132,6 +132,7 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:3001",
     'http://localhost:5174',
     'http://localhost:5173',
+    'http://localhost:5176',
     # Add other domains as needed for production
 ]
 
@@ -177,4 +178,4 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 GOOGLE_APPLICATION_CREDENTIALS = os.path.join(BASE_DIR, 'jsn.json')
 
 
-GOOGLE_CLOUD_VISION_API_KEY = 'AIzaSyAsAmL8YL1S9Qntpi86Xh1pxE3Sn26IXr4'
+GOOGLE_CLOUD_VISION_API_KEY = 'AIzaSyCMuO31qsBPL6_leDYpchfsIJ11vsEw73I'

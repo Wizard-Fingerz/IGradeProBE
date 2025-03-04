@@ -21,7 +21,7 @@ class SubQuestionSerializer(serializers.ModelSerializer):
         model = SubjectQuestion
         fields = ['id', 'question_number', 'comprehension', 'question',
                   'examiner_answer', 'question_score', 'is_optional', 'parent_question']
-
+        ref_name = 'ExamSubQuestionSerializer'  # Add ref_name to avoid conflict
 
 class SubjectQuestionNestedSerializer(serializers.ModelSerializer):
     sub_questions = SubQuestionSerializer(many=True, required=False)
@@ -30,7 +30,9 @@ class SubjectQuestionNestedSerializer(serializers.ModelSerializer):
         model = SubjectQuestion
         fields = ['question_number', 'comprehension', 'question',
                   'examiner_answer', 'question_score', 'is_optional', 'sub_questions']
+        ref_name = 'QuestionSubQuestionSerializer'  
 
+        
     def create(self, validated_data):
         sub_questions_data = validated_data.pop('sub_questions', [])
         subject = validated_data.get('subject')
