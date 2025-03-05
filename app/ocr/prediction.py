@@ -25,7 +25,7 @@ class PredictionService:
 
     
     def load_model(self):
-        model_path = './model/new_dump/dt_model_new.joblib'
+        model_path = './new_dump/dt_model_new.joblib'
 
         try:
             model = joblib.load(model_path)

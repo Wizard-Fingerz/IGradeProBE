@@ -1,6 +1,8 @@
+from django.db.models import Sum
 import textdistance
 import re
 from app.ocr.prediction import PredictionService
+from app.questions.models import SubjectQuestion
 from app.results.models import ExamResult
 from app.scores.models import ExamResultScore
 from app.subjects.models import Subject  # Import the Subject model
@@ -194,71 +196,73 @@ class BulkUploadScriptView(APIView):
             f"temp/{uploaded_file.name}", ContentFile(uploaded_file.read()))
         zip_full_path = default_storage.path(zip_path)
 
-        # try:
-        with zipfile.ZipFile(zip_full_path, "r") as zip_ref:
-            # Extract and read the CSV file
-            csv_file_name = [
-                f for f in zip_ref.namelist() if f.endswith(".csv")][0]
-            csv_file_data = zip_ref.read(
-                csv_file_name).decode("utf-8").splitlines()
-            csv_reader = csv.DictReader(csv_file_data)
+        try:
+            with zipfile.ZipFile(zip_full_path, "r") as zip_ref:
+                # Extract and read the CSV file
+                csv_file_name = [
+                    f for f in zip_ref.namelist() if f.endswith(".csv")][0]
+                csv_file_data = zip_ref.read(
+                    csv_file_name).decode("utf-8").splitlines()
+                csv_reader = csv.DictReader(csv_file_data)
 
-            for row in csv_reader:
-                student, created = Student.objects.get_or_create(
-                    center_number=row["centre_number"],
-                    candidate_number=row["candidate_number"],
-                    examination_number=row["examination_number"],
-                    defaults={
-                        "exam_type": row.get("exam_type", None),
-                        "year": row.get("year", None),
-                    },
-                )
+                for row in csv_reader:
+                    student, created = Student.objects.get_or_create(
+                        center_number=row["centre_number"],
+                        candidate_number=row["candidate_number"],
+                        examination_number=row["examination_number"],
+                        defaults={
+                            "exam_type": row.get("exam_type", None),
+                            "year": row.get("year", None),
+                        },
+                    )
 
-                student_script = StudentScript.objects.create(
-                    student_id=student,
-                    subject=subject,
-                )
+                    student_script = StudentScript.objects.create(
+                        student_id=student,
+                        subject=subject,
+                    )
 
-                for file_name in zip_ref.namelist():
-                    if file_name.endswith((".png", ".jpg", ".jpeg")) and f"{row['examination_number']}" in file_name:
-                        file_data = zip_ref.read(file_name)
-                        image_path = f"scripts/{row['examination_number']}/{file_name}"
-                        default_storage.save(image_path, ContentFile(file_data))
+                    for file_name in zip_ref.namelist():
+                        if file_name.endswith((".png", ".jpg", ".jpeg")) and f"{row['examination_number']}" in file_name:
+                            file_data = zip_ref.read(file_name)
+                            image_path = f"scripts/{row['examination_number']}/{file_name}"
+                            default_storage.save(
+                                image_path, ContentFile(file_data))
 
-                        extracted_text = detect_document_modified(
-                            default_storage.path(
-                                image_path), settings.GOOGLE_APPLICATION_CREDENTIALS
-                        )
+                            extracted_text = detect_document_modified(
+                                default_storage.path(
+                                    image_path), settings.GOOGLE_APPLICATION_CREDENTIALS
+                            )
 
-                       
-                        extracted_text = extract_all_text_between_as_ae(extracted_text)
+                            extracted_text = extract_all_text_between_as_ae(
+                                extracted_text)
 
-                        # Iterate over extracted Q&A
-                        for qa in extracted_text:
-                            question_text = qa.get("question")
-                            student_answer = qa.get("answer")
-                            # print(qa)
-                            # print(f"Question: {question_text}")
-                            # print(f"First Answer Extracted: {student_answer}")
-
-                            if question_text and student_answer:
-                                question = find_matching_question(question_text)
+                            # Iterate over extracted Q&A
+                            for qa in extracted_text:
+                                question_text = qa.get("question")
+                                student_answer = qa.get("answer")
+                                # print(qa)
                                 # print(f"Question: {question_text}")
-                                # print(f"Answer: {student_answer}")
-                                print(f"Question: {question.question}")
+                                # print(f"First Answer Extracted: {student_answer}")
 
-                                if question:
-                                    self.grade_answer(student, question, student_answer)
+                                if question_text and student_answer:
+                                    question = find_matching_question(
+                                        question_text)
+                                    # print(f"Question: {question_text}")
+                                    # print(f"Answer: {student_answer}")
+                                    print(f"Question: {question}")
 
+                                    if question:
+                                        self.grade_answer(
+                                            student, question, student_answer)
 
-        # except Exception as e:
-        #     return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-        # finally:
-        #     os.remove(zip_full_path)  # Cleanup temporary ZIP file
+              
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        finally:
+            os.remove(zip_full_path)  # Cleanup temporary ZIP file
 
         return Response({"message": "Upload and processing complete"}, status=status.HTTP_201_CREATED)
-    
-    
+
     def grade_answer(self, student, question, student_answer):
         prediction_service = PredictionService()
         student_score = prediction_service.predict(
@@ -270,7 +274,8 @@ class BulkUploadScriptView(APIView):
             student_answer=student_answer
         )
 
-        print(f"Grading student {student.id} for question '{question.question}'")
+        print(
+            f"Grading student {student.id} for question '{question.question}'")
         print(f"Student answer: {student_answer}")
         print(f"Score awarded: {student_score}")
 
@@ -292,21 +297,32 @@ class BulkUploadScriptView(APIView):
 
         self.detect_plagiarism(question.id, student_answer, exam_result)
 
-        total_score = ExamResult.objects.filter(student=student, question__course=question.course).aggregate(
-            Sum('student_score')
-        )['student_score__sum'] or 0
+        # Ensure question.subject is a related instance
+        if isinstance(question.subject, str):
+            subject_instance = SubjectQuestion.objects.filter(
+                name=question.subject).first()
+        else:
+            subject_instance = question.subject
+
+        if subject_instance:
+            total_score = ExamResult.objects.filter(student=student, question__subject=subject_instance).aggregate(
+                Sum('student_score')
+            )['student_score__sum'] or 0
+        else:
+            total_score = 0  # Avoid query failure if no subject is found
+
+        print(f"Total score for student {student.id}: {total_score}")
 
         exam_result_score, _ = ExamResultScore.objects.get_or_create(
-            student=student, course=question.course
+            student=student, subject=question.subject,
+
         )
         exam_result_score.exam_score = total_score
         exam_result_score.calculate_grade()
         exam_result_score.save()
-        
+
         print(f"Total score for student {student.id}: {total_score}")
-    
-        
-    
+
     def detect_plagiarism(self, question_id, new_answer, new_exam_result):
         existing_results = ExamResult.objects.filter(
             question_id=question_id).exclude(id=new_exam_result.id)

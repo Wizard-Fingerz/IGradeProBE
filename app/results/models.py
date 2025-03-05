@@ -13,8 +13,17 @@ class ExamResult(models.Model):
     similarity_score = models.FloatField(null=True, blank=True)  # New field to store similarity score
     attempted = models.BooleanField(default=True)  # New field to indicate if the question was attempted
 
+    @property
+    def question_text(self):
+        return self.question.question
+
+
+    @property
+    def candidate_number(self):
+        return self.student.candidate_number
+    
     def __str__(self):
-        return f"{self.student.user}'s answer to {self.question}"
+        return f"{self.student.candidate_number}'s answer to {self.question}"
     
     def save(self, *args, **kwargs):
         super().save(*args, **kwargs)
@@ -22,7 +31,7 @@ class ExamResult(models.Model):
 
     def update_exam_result_score(self):
         # Calculate the total score for attempted compulsory questions and attempted optional questions
-        results = ExamResult.objects.filter(student=self.student, question__Subject=self.question.Subject)
+        results = ExamResult.objects.filter(student=self.student, question__subject=self.question.subject)
         compulsory_questions = results.filter(question__is_optional=False)
         optional_questions = results.filter(question__is_optional=True, attempted=True)
 
@@ -38,7 +47,7 @@ class ExamResult(models.Model):
         effective_total_marks = compulsory_total_marks + optional_total_marks
 
         # Update or create ExamResultScore instance for the student
-        exam_result_score, _ = ExamResultScore.objects.get_or_create(student=self.student, Subject=self.question.Subject)
+        exam_result_score, _ = ExamResultScore.objects.get_or_create(student=self.student, subject=self.question.subject)
         exam_result_score.exam_score = total_score
         exam_result_score.effective_total_marks = effective_total_marks
         exam_result_score.calculate_grade()

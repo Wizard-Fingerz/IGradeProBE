@@ -9,7 +9,9 @@ class ExamResultSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = ExamResult
-        fields = '__all__'
+        fields = ['id', 'student', 'question', 'student_answer', 'student_score', 'similarity_score',
+                  'similarity_score_percentage', 'attempted', 'question_text', 'candidate_number']
+        read_only_fields = ['similarity_score_percentage', 'question_text', 'candidate_number']
 
     def get_similarity_score_percentage(self, obj):
         if obj.similarity_score is not None:
