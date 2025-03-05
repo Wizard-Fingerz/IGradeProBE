@@ -6,17 +6,13 @@ from app.scores.models import ExamResultScore
 
 
 class ExamResultScoreSerializer(serializers.ModelSerializer):
-    examiner = serializers.CharField(
-        source='Subject.examiner.username', read_only=True)
-    subject_name = serializers.CharField(source='subject.title', read_only=True)
-    subject_code = serializers.CharField(source='subject.code', read_only=True)
-    # student = serializers.CharField(source='student.user', read_only=True)
-    student = DetailedStudentSerializer(read_only= True)
-
+    
     class Meta:
         model = ExamResultScore
-        fields = ['id', 'student', 'subject_code', 'exam_score',
-                  'examiner', 'grade', 'subject_name', 'percentage_score', 'effective_total_marks']
+        fields = ['id', 'student', 'exam_score', 'student_name', 'student_detials',
+                 'grade', 'subject_detials', 'percentage_score', 'effective_total_marks']
+        read_only_fields = ['grade',  'student_name', 'student_detials','subject_detials', 'percentage_score', 'effective_total_marks']
+
 
 
 class AnswerScoreSerializer(serializers.ModelSerializer):

@@ -14,6 +14,19 @@ class ExamResultScore(models.Model):
     is_disabled = models.BooleanField(default=True)
     effective_total_marks = models.IntegerField(null=True, blank=True)  # New field
 
+    @property
+    def student_name(self):
+        return self.student.get_full_name()
+    
+    @property
+    def subject_detials(self):
+        return f"{self.subject.name} - {self.subject.code}"
+
+    @property
+    def student_detials(self):
+        return f"{self.student.get_full_name()} - {self.student.candidate_number}"
+    
+
     def __str__(self):
         return f"{self.student}'s exam score for {self.Subject}"
 
