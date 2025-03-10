@@ -233,6 +233,8 @@ class BulkUploadScriptView(APIView):
                                     image_path), settings.GOOGLE_APPLICATION_CREDENTIALS
                             )
 
+                            print(f"Extracted text: {extracted_text}")
+
                             extracted_text = extract_all_text_between_as_ae(
                                 extracted_text)
 

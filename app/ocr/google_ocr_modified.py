@@ -71,6 +71,7 @@ def detect_document_modified(image_path, json_path):
 
 def extract_all_text_between_as_ae(text):
     if not isinstance(text, str):  # Ensure text is a string
+        print(text)
         print(f"Warning: extract_all_text_between_as_ae received non-string input ({type(text)})")
         return []  # Return an empty list to prevent errors
 
@@ -110,6 +111,7 @@ def extract_all_text_between_as_ae(text):
 
 def find_matching_question(extracted_question):
     all_questions = SubjectQuestion.objects.values_list("question", flat=True)
+    print(all_questions)
     best_match = get_close_matches(
         extracted_question, all_questions, n=1, cutoff=0.6)
 

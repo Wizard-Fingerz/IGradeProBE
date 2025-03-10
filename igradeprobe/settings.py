@@ -9,7 +9,7 @@ https://docs.djangoproject.com/en/5.1/topics/settings/
 For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.1/ref/settings/
 """
-
+from decouple import config, Csv
 from datetime import timedelta
 import os
 from pathlib import Path
@@ -22,12 +22,14 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/5.1/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure--he+ro1)k1vyhm%naha)$xhz)9c=(fobby(5g5j88*e(c*@_6u'
+# SECURITY WARNING: keep the secret key used in production secret!
+SECRET_KEY = config('SECRET_KEY')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = config('DEBUG', default=False, cast=bool)
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = config('ALLOWED_HOSTS', cast=Csv())
+
 
 
 # Application definition
@@ -175,7 +177,5 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 
 # Path to your credentials JSON file relative to BASE_DIR
-GOOGLE_APPLICATION_CREDENTIALS = os.path.join(BASE_DIR, 'jsn.json')
-
-
-GOOGLE_CLOUD_VISION_API_KEY = 'AIzaSyCMuO31qsBPL6_leDYpchfsIJ11vsEw73I'
+GOOGLE_APPLICATION_CREDENTIALS = config('GOOGLE_APPLICATION_CREDENTIALS')
+GOOGLE_CLOUD_VISION_API_KEY = config('GOOGLE_CLOUD_VISION_API_KEY')
