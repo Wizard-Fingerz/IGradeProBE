@@ -41,3 +41,7 @@ ehthumbs.db
 media/
 
 .json
+*.json
+*.json
+!config/*.json
+logs/*.json
