@@ -21,6 +21,19 @@ class ExamResult(models.Model):
     @property
     def candidate_number(self):
         return self.student.candidate_number
+
+    @property
+    def question_number(self):
+        return self.question.question_number
+    
+    
+    @property
+    def question_score(self):
+        return self.question.question_score
+
+    @property
+    def examiner_answer(self):
+        return self.question.examiner_answer
     
     def __str__(self):
         return f"{self.student.candidate_number}'s answer to {self.question}"
