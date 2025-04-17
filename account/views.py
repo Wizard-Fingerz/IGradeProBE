@@ -68,3 +68,19 @@ class UserViewSet(viewsets.ModelViewSet):
             # If no user found (which is unlikely as we're using request.user), return a 404
             return Response({"error": "User not found."}, status=status.HTTP_404_NOT_FOUND)
  
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework import status
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.authtoken.models import Token
+
+class LogoutView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, *args, **kwargs):
+        try:
+            # Delete the user's token to log them out
+            request.user.auth_token.delete()
+            return Response({"message": "Successfully logged out."}, status=status.HTTP_200_OK)
+        except Token.DoesNotExist:
+            return Response({"error": "Invalid token or user not logged in."}, status=status.HTTP_400_BAD_REQUEST)
