@@ -6,6 +6,7 @@ from app.questions.views import SubjectQuestionViewSet
 from app.results.views import ExamResultViewSet
 from app.scores.views import ExamResultScoreViewSet
 from app.subjects.views import SubjectViewSet
+from app.views import AnalyticsView
 
 
 app_name = 'app'
@@ -16,7 +17,8 @@ router.register(r'subjects', SubjectViewSet, basename='subjects')
 # router.register(r'exam-create', ExamCreateView, basename='create-exam')
 router.register(r'subject-questions', SubjectQuestionViewSet,
                 basename='subject-question')
-router.register(r'student-scripts', StudentScriptViewSet, basename='student-script')
+router.register(r'student-scripts', StudentScriptViewSet,
+                basename='student-script')
 router.register(r'exam-results', ExamResultViewSet, basename='exam_result')
 router.register(r'exam-scores', ExamResultScoreViewSet, basename='exam_score')
 
@@ -35,6 +37,7 @@ urlpatterns = [
     path('app/bulk-upload-script/', BulkUploadScriptView.as_view(),
          name='bulk-upload-script'),
     path("app/scripts", ScriptOutputView.as_view(), name="script-output"),
+    path('app/analytics/', AnalyticsView.as_view(), name='analytics'),
 
 
 ]
