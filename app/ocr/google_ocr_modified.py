@@ -116,5 +116,5 @@ def find_matching_question(extracted_question):
         extracted_question, all_questions, n=1, cutoff=0.6)
 
     if best_match:
-        return SubjectQuestion.objects.get(question=best_match[0])
+        return SubjectQuestion.objects.filter(question=best_match[0]).first()
     return None  # No good match found
