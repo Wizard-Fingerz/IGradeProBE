@@ -1,6 +1,9 @@
 from django.db.models import Sum
 import textdistance
 import re
+from app.exams.models import Exam
+from app.ocr.easy_ocr import handwritten_to_text_easyocr
+from app.ocr.my_script_ocr import extract_text_from_image
 from app.ocr.prediction import PredictionService
 from app.questions.models import SubjectQuestion
 from app.results.models import ExamResult
@@ -227,6 +230,8 @@ class BulkUploadScriptView(APIView):
                             image_path = f"scripts/{row['examination_number']}/{file_name}"
                             default_storage.save(
                                 image_path, ContentFile(file_data))
+                            
+                            print(f"Processing image: {image_path}")
 
                             extracted_text = detect_document_modified(
                                 default_storage.path(
@@ -237,7 +242,17 @@ class BulkUploadScriptView(APIView):
 
                             extracted_text = extract_all_text_between_as_ae(
                                 extracted_text)
+                            # extracted_text = extract_text_from_image(default_storage.path(image_path))
+                            # print(f"Extracted text from MY Script: {extracted_text}")
 
+                            # if extracted_text == None:
+                            #     extracted_text = extract_text_from_image(image_path)
+                            #     print("No text extracted from image.")
+                            #     print(f"Extracted text from MY Script: {extracted_text}")
+
+
+                            # extracted_text = handwritten_to_text_easyocr(
+                            #     default_storage.path(image_path))
                             # Iterate over extracted Q&A
                             for qa in extracted_text:
                                 question_text = qa.get("question")
@@ -257,7 +272,7 @@ class BulkUploadScriptView(APIView):
                                         self.grade_answer(
                                             student, question, student_answer)
 
-                
+            
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         finally:
@@ -281,7 +296,10 @@ class BulkUploadScriptView(APIView):
         print(f"Student answer: {student_answer}")
         print(f"Score awarded: {student_score}")
 
+        exam = Exam.objects.get(subject = question.subject)
+
         exam_result, created = ExamResult.objects.get_or_create(
+            exam = exam,
             student=student,
             question=question,
             defaults={

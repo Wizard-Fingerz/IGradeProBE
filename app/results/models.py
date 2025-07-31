@@ -1,11 +1,13 @@
 from django.db import models
 from account.students.models import Student
+from app.exams.models import Exam
 from app.questions.models import SubjectQuestion
 from app.scores.models import ExamResultScore
 from django.db.models import Sum
 
 
 class ExamResult(models.Model):
+    exam = models.ForeignKey(Exam, on_delete=models.CASCADE, related_name='exam_results')
     student = models.ForeignKey(Student, on_delete=models.CASCADE)
     question = models.ForeignKey(SubjectQuestion, on_delete=models.CASCADE)
     student_answer = models.TextField(null=True, blank=True)
@@ -60,7 +62,7 @@ class ExamResult(models.Model):
         effective_total_marks = compulsory_total_marks + optional_total_marks
 
         # Update or create ExamResultScore instance for the student
-        exam_result_score, _ = ExamResultScore.objects.get_or_create(student=self.student, subject=self.question.subject)
+        exam_result_score, _ = ExamResultScore.objects.get_or_create(student=self.student, subject=self.question.subject, exam = self.exam)
         exam_result_score.exam_score = total_score
         exam_result_score.effective_total_marks = effective_total_marks
         exam_result_score.calculate_grade()

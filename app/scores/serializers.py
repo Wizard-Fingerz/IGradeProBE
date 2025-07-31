@@ -6,13 +6,13 @@ from app.scores.models import ExamResultScore
 
 
 class ExamResultScoreSerializer(serializers.ModelSerializer):
-    
+
     class Meta:
         model = ExamResultScore
-        fields = ['id', 'student', 'exam_score', 'student_name', 'student_detials',
-                 'grade', 'subject_detials', 'percentage_score', 'effective_total_marks']
-        read_only_fields = ['grade',  'student_name', 'student_detials','subject_detials', 'percentage_score', 'effective_total_marks']
-
+        fields = ['id', 'exam_total_mark', 'student', 'exam_score', 'student_name', 'student_detials',
+                  'grade', 'subject_detials', 'percentage_score', 'effective_total_marks']
+        read_only_fields = ['grade', 'exam_total_mark', 'student_name', 'student_detials',
+                            'subject_detials', 'percentage_score', 'effective_total_marks']
 
 
 class AnswerScoreSerializer(serializers.ModelSerializer):
@@ -35,8 +35,7 @@ class AnswerScoreSerializer(serializers.ModelSerializer):
         model = ExamResult
         fields = ['student', 'Subject_code', 'Subject_name', 'question_number',
                   'question', 'student_answer', 'student_score', 'question_score', 'similarity_score_percentage']
-        
-    
+
     def get_similarity_score_percentage(self, obj):
         if obj.similarity_score is not None:
             return f"{obj.similarity_score * 100:.0f}%"

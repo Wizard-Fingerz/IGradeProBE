@@ -2,10 +2,12 @@
 from django.db import models
 
 from account.students.models import Student
+from app.exams.models import Exam
 from app.subjects.models import Subject
 
 
 class ExamResultScore(models.Model):
+    exam = models.ForeignKey(Exam, on_delete=models.CASCADE, related_name='exam_result_scores')
     student = models.ForeignKey(Student, on_delete=models.CASCADE)
     subject = models.ForeignKey(Subject, on_delete=models.CASCADE)
     exam_score = models.IntegerField(null=True, blank=True)
@@ -13,6 +15,10 @@ class ExamResultScore(models.Model):
     grade = models.CharField(max_length=2, blank=True)
     is_disabled = models.BooleanField(default=True)
     effective_total_marks = models.IntegerField(null=True, blank=True)  # New field
+
+    @property
+    def exam_total_mark(self):
+        return self.exam.total_mark if self.exam else 0
 
     @property
     def student_name(self):

@@ -31,6 +31,11 @@ DEBUG = config('DEBUG', default=False, cast=bool)
 ALLOWED_HOSTS = config('ALLOWED_HOSTS', cast=Csv())
 
 
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:5173",
+    "http://localhost:5174",
+    "http://localhost:5175",
+]
 
 # Application definition
 
@@ -179,3 +184,7 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 # Path to your credentials JSON file relative to BASE_DIR
 GOOGLE_APPLICATION_CREDENTIALS = config('GOOGLE_APPLICATION_CREDENTIALS')
 GOOGLE_CLOUD_VISION_API_KEY = config('GOOGLE_CLOUD_VISION_API_KEY')
+
+
+MYSCRIPT_API_KEY = config('MYSCRIPT_API_KEY')
+MYSCRIPT_HMAC_KEY = config('MYSCRIPT_HMAC_KEY')
