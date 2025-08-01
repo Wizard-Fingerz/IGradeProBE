@@ -22,7 +22,7 @@ from rest_framework.response import Response
 from rest_framework.parsers import MultiPartParser
 from rest_framework import status
 
-from app.test_ocr.main import extract_text_with_test_ocr
+from app.test_ocr_main.main import extract_text_with_test_ocr
 from .models import StudentScript, ScriptPage
 from rest_framework.decorators import action
 from .serializers import StudentScriptSerializer

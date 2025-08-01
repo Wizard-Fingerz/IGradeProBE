@@ -1,0 +1,7 @@
+# Requirements for TEST_OCR project
+craft_text_detector
+opencv-python
+Pillow
+torch
+torchvision
+transformers
