@@ -13,6 +13,6 @@ def handwritten_to_text_easyocr(image_path, language='en'):
         return f"Error: {e}"
 
 # Example usage
-image_file = '525100527_502333_02.jpg'
-extracted_text = handwritten_to_text_easyocr(image_file)
-print(extracted_text)
+# image_file = '525100527_502333_02.jpg'
+# extracted_text = handwritten_to_text_easyocr(image_file)
+# print(extracted_text)

@@ -158,8 +158,8 @@ def process_handwritten_image(image_path):
 # ---------------------------------------------
 # Run it
 # ---------------------------------------------
-if __name__ == "__main__":
-    # Replace this with your actual image path
-    image_path = "525100527_502333_02.jpg"
-    result = process_handwritten_image(image_path)
-    print("\nFinal Structured Output:\n", result)
+# if __name__ == "__main__":
+#     # Replace this with your actual image path
+#     image_path = "525100527_502333_02.jpg"
+#     result = process_handwritten_image(image_path)
+#     print("\nFinal Structured Output:\n", result)

@@ -45,3 +45,36 @@ media/
 *.json
 !config/*.json
 logs/*.json
+
+
+# Python
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.swp
+*.swo
+*.bak
+*.tmp
+.DS_Store
+*.log
+*.pth
+*.h5
+*.ckpt
+*.pt
+*.onnx
+*.pkl
+*.npz
+*.npy
+*.zip
+*.tar
+*.tar.gz
+*.egg-info/
+
+# CRAFT/Model/Output folders
+.craft_text_detector/
+**/models/
+**/output/
+**/crops/
+
