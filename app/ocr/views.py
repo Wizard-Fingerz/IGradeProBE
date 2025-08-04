@@ -201,86 +201,86 @@ class BulkUploadScriptView(APIView):
             f"temp/{uploaded_file.name}", ContentFile(uploaded_file.read()))
         zip_full_path = default_storage.path(zip_path)
 
-        try:
-            with zipfile.ZipFile(zip_full_path, "r") as zip_ref:
-                # Extract and read the CSV file
-                csv_file_name = [
-                    f for f in zip_ref.namelist() if f.endswith(".csv")][0]
-                csv_file_data = zip_ref.read(
-                    csv_file_name).decode("utf-8").splitlines()
-                csv_reader = csv.DictReader(csv_file_data)
+        # try:
+        with zipfile.ZipFile(zip_full_path, "r") as zip_ref:
+            # Extract and read the CSV file
+            csv_file_name = [
+                f for f in zip_ref.namelist() if f.endswith(".csv")][0]
+            csv_file_data = zip_ref.read(
+                csv_file_name).decode("utf-8").splitlines()
+            csv_reader = csv.DictReader(csv_file_data)
 
-                for row in csv_reader:
-                    student, created = Student.objects.get_or_create(
-                        center_number=row["centre_number"],
-                        candidate_number=row["candidate_number"],
-                        examination_number=row["examination_number"],
-                        defaults={
-                            "exam_type": row.get("exam_type", None),
-                            "year": row.get("year", None),
-                        },
-                    )
+            for row in csv_reader:
+                student, created = Student.objects.get_or_create(
+                    center_number=row["centre_number"],
+                    candidate_number=row["candidate_number"],
+                    examination_number=row["examination_number"],
+                    defaults={
+                        "exam_type": row.get("exam_type", None),
+                        "year": row.get("year", None),
+                    },
+                )
 
-                    student_script = StudentScript.objects.create(
-                        student_id=student,
-                        subject=subject,
-                    )
+                student_script = StudentScript.objects.create(
+                    student_id=student,
+                    subject=subject,
+                )
 
-                    for file_name in zip_ref.namelist():
-                        if file_name.endswith((".png", ".jpg", ".jpeg")) and f"{row['examination_number']}" in file_name:
-                            file_data = zip_ref.read(file_name)
-                            image_path = f"scripts/{row['examination_number']}/{file_name}"
-                            default_storage.save(
-                                image_path, ContentFile(file_data))
-                            
-                            print(f"Processing image: {image_path}")
+                for file_name in zip_ref.namelist():
+                    if file_name.endswith((".png", ".jpg", ".jpeg")) and f"{row['examination_number']}" in file_name:
+                        file_data = zip_ref.read(file_name)
+                        image_path = f"scripts/{row['examination_number']}/{file_name}"
+                        default_storage.save(
+                            image_path, ContentFile(file_data))
+                        
+                        print(f"Processing image: {image_path}")
 
-                            # extracted_text = detect_document_modified(
-                            #     default_storage.path(
-                            #         image_path), settings.GOOGLE_APPLICATION_CREDENTIALS
-                            # )
+                        # extracted_text = detect_document_modified(
+                        #     default_storage.path(
+                        #         image_path), settings.GOOGLE_APPLICATION_CREDENTIALS
+                        # )
 
-                            extracted_text = extract_text_with_test_ocr(default_storage.path(image_path))
+                        extracted_text = extract_text_with_test_ocr(default_storage.path(image_path))
 
-                            print(f"Extracted text: {extracted_text}")
+                        print(f"Extracted text: {extracted_text}")
 
-                            extracted_text = extract_all_text_between_as_ae(
-                                extracted_text)
-                            # extracted_text = extract_text_from_image(default_storage.path(image_path))
-                            # print(f"Extracted text from MY Script: {extracted_text}")
+                        extracted_text = extract_all_text_between_as_ae(
+                            extracted_text)
+                        # extracted_text = extract_text_from_image(default_storage.path(image_path))
+                        # print(f"Extracted text from MY Script: {extracted_text}")
 
-                            # if extracted_text == None:
-                            #     extracted_text = extract_text_from_image(image_path)
-                            #     print("No text extracted from image.")
-                            #     print(f"Extracted text from MY Script: {extracted_text}")
+                        # if extracted_text == None:
+                        #     extracted_text = extract_text_from_image(image_path)
+                        #     print("No text extracted from image.")
+                        #     print(f"Extracted text from MY Script: {extracted_text}")
 
 
-                            # extracted_text = handwritten_to_text_easyocr(
-                            #     default_storage.path(image_path))
-                            # Iterate over extracted Q&A
-                            for qa in extracted_text:
-                                question_text = qa.get("question")
-                                student_answer = qa.get("answer")
-                                # print(qa)
+                        # extracted_text = handwritten_to_text_easyocr(
+                        #     default_storage.path(image_path))
+                        # Iterate over extracted Q&A
+                        for qa in extracted_text:
+                            question_text = qa.get("question")
+                            student_answer = qa.get("answer")
+                            # print(qa)
+                            # print(f"Question: {question_text}")
+                            # print(f"First Answer Extracted: {student_answer}")
+
+                            if question_text and student_answer:
+                                question = find_matching_question(
+                                    question_text)
                                 # print(f"Question: {question_text}")
-                                # print(f"First Answer Extracted: {student_answer}")
+                                # print(f"Answer: {student_answer}")
+                                print(f"Question: {question}")
 
-                                if question_text and student_answer:
-                                    question = find_matching_question(
-                                        question_text)
-                                    # print(f"Question: {question_text}")
-                                    # print(f"Answer: {student_answer}")
-                                    print(f"Question: {question}")
-
-                                    if question:
-                                        self.grade_answer(
-                                            student, question, student_answer)
+                                if question:
+                                    self.grade_answer(
+                                        student, question, student_answer)
 
             
-        except Exception as e:
-            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-        finally:
-            os.remove(zip_full_path)  # Cleanup temporary ZIP file
+        # except Exception as e:
+        #     return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        # finally:
+        #     os.remove(zip_full_path)  # Cleanup temporary ZIP file
 
         return Response({"message": "Upload and processing complete"}, status=status.HTTP_201_CREATED)
 

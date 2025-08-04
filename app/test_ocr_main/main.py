@@ -32,6 +32,31 @@ def save_cropped_images(image, boxes, output_dir="crops"):
     return crops
 
 
+def join_recognized_texts(recognized_texts):
+    lines = []
+    current_line = ""
+
+    for text in recognized_texts:
+        text = text.strip()
+        if not text:
+            continue
+
+        # Heuristic: if text ends in punctuation, treat as end of sentence/line
+        if text[-1:] in [".", "?", "!", ":"] or len(text) < 5:
+            current_line += " " + text
+            lines.append(current_line.strip())
+            current_line = ""
+        else:
+            current_line += " " + text
+
+    if current_line:
+        lines.append(current_line.strip())
+
+    # Join all lines into a single string (paragraph) or return the list
+    return "\n".join(lines)  # or use " ".join(lines) for a single paragraph
+
+
+
 def extract_text_with_test_ocr(image_path):
     print("[INFO] Starting OCR pipeline...")
 
@@ -56,6 +81,10 @@ def extract_text_with_test_ocr(image_path):
     print("\n=== Recognized Texts ===")
     for i, text in enumerate(recognized_texts, 1):
         print(f"{i}. {text}")
+
+        # Step 6: Return cleaned joined text (no line numbers)
+    full_text = "\n".join(text.strip() for text in recognized_texts if text.strip())
+    return full_text
 
 
 
