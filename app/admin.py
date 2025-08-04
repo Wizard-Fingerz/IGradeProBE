@@ -5,6 +5,7 @@ from import_export.admin import ImportExportModelAdmin
 from app.exams.models import Exam
 from app.questions.models import SubjectQuestion
 from app.results.models import ExamResult
+from app.scores.models import ExamResultScore
 from app.subjects.models import Subject
 
 # Register your models here.
@@ -35,6 +36,14 @@ class SubjectQuestionAdmin(ImportExportModelAdmin):
     list_display = ('subject', 'question_number', 'comprehension', 'question', 'examiner_answer', 'question_score', 'is_optional', 'parent_question')
     search_fields = ['subject', 'question_number']
     list_filter = ['subject', 'question_number']
+
+
+@admin.register(ExamResultScore)
+class ExamResultScoreAdmin(ImportExportModelAdmin):
+    list_display = ('exam', 'student', 'subject', 'student', 'exam_score', 'percentage_score', 'grade', 'is_disabled', 'effective_total_marks', 'exam_total_mark', 'student_name', 'subject_detials', 'student_detials')
+    # search_fields = ['subject', 'question_number']
+    # list_filter = ['subject', 'question_number']
+
 
 
 admin.site.site_header = 'Intelligent Essay Grading Pro Administration Dashboard'

@@ -34,7 +34,7 @@ class ExamResultScore(models.Model):
     
 
     def __str__(self):
-        return f"{self.student}'s exam score for {self.Subject}"
+        return f"{self.student}'s exam score for {self.subject}"
 
     def calculate_grade(self):
         if self.effective_total_marks == 0:

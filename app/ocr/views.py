@@ -177,6 +177,7 @@ class UploadScriptView(APIView):
         return Response(StudentScriptSerializer(script_instance).data, status=status.HTTP_201_CREATED)
 
 
+
 class BulkUploadScriptView(APIView):
     parser_classes = [MultiPartParser]
 
@@ -221,6 +222,13 @@ class BulkUploadScriptView(APIView):
                     },
                 )
 
+                # ✅ Get the corresponding exam for the subject
+                try:
+                    exam = Exam.objects.get(subject=subject)
+                except Exam.DoesNotExist:
+                    continue  # Skip if no exam is found for subject
+
+
                 student_script = StudentScript.objects.create(
                     student_id=student,
                     subject=subject,
@@ -235,47 +243,34 @@ class BulkUploadScriptView(APIView):
                         
                         print(f"Processing image: {image_path}")
 
-                        # extracted_text = detect_document_modified(
-                        #     default_storage.path(
-                        #         image_path), settings.GOOGLE_APPLICATION_CREDENTIALS
-                        # )
-
                         extracted_text = extract_text_with_test_ocr(default_storage.path(image_path))
 
                         print(f"Extracted text: {extracted_text}")
 
                         extracted_text = extract_all_text_between_as_ae(
                             extracted_text)
-                        # extracted_text = extract_text_from_image(default_storage.path(image_path))
-                        # print(f"Extracted text from MY Script: {extracted_text}")
-
-                        # if extracted_text == None:
-                        #     extracted_text = extract_text_from_image(image_path)
-                        #     print("No text extracted from image.")
-                        #     print(f"Extracted text from MY Script: {extracted_text}")
-
-
-                        # extracted_text = handwritten_to_text_easyocr(
-                        #     default_storage.path(image_path))
+                     
+                     
                         # Iterate over extracted Q&A
                         for qa in extracted_text:
                             question_text = qa.get("question")
                             student_answer = qa.get("answer")
-                            # print(qa)
-                            # print(f"Question: {question_text}")
-                            # print(f"First Answer Extracted: {student_answer}")
+                            print(qa)
+                            print(f"Question: {question_text}")
+                            print(f"First Answer Extracted: {student_answer}")
 
                             if question_text and student_answer:
                                 question = find_matching_question(
                                     question_text)
-                                # print(f"Question: {question_text}")
-                                # print(f"Answer: {student_answer}")
+                                print(f"Question: {question_text}")
+                                print(f"Answer: {student_answer}")
                                 print(f"Question: {question}")
 
                                 if question:
                                     self.grade_answer(
                                         student, question, student_answer)
-
+                
+                self.update_parent_question_scores(student, exam)
             
         # except Exception as e:
         #     return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -347,6 +342,36 @@ class BulkUploadScriptView(APIView):
 
         print(f"Total score for student {student.id}: {total_score}")
 
+    
+    def update_parent_question_scores(self, student, exam):
+        """
+        Aggregate scores from sub-questions and assign to parent questions.
+        """
+        parent_questions = SubjectQuestion.objects.filter(sub_questions__isnull=False).distinct()
+
+        for parent in parent_questions:
+            sub_results = ExamResult.objects.filter(
+                student=student,
+                exam=exam,
+                question__parent_question=parent
+            )
+
+            total_score = sub_results.aggregate(Sum("student_score"))["student_score__sum"] or 0
+
+            parent_result, created = ExamResult.objects.get_or_create(
+                student=student,
+                exam=exam,
+                question=parent,
+                defaults={"student_score": total_score, "attempted": True}
+            )
+
+            if not created:
+                parent_result.student_score = total_score
+                parent_result.attempted = True
+                parent_result.save()
+
+
+    
     def detect_plagiarism(self, question_id, new_answer, new_exam_result):
         existing_results = ExamResult.objects.filter(
             question_id=question_id).exclude(id=new_exam_result.id)
