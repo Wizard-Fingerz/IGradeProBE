@@ -2,8 +2,6 @@ from django.db.models import Sum
 import textdistance
 import re
 from app.exams.models import Exam
-from app.ocr.easy_ocr import handwritten_to_text_easyocr
-from app.ocr.my_script_ocr import extract_text_from_image
 from app.ocr.prediction import PredictionService
 from app.questions.models import SubjectQuestion
 from app.results.models import ExamResult
