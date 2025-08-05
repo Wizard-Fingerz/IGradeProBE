@@ -68,6 +68,57 @@ def detect_document_modified(image_path, json_path):
         # logging.error(f"Failed to extract text: {str(e)}")
         return None
 
+import re
+
+# $MQ$ ... $/MQ$
+# $Q$ ... $/Q$
+# $A$ ... $/A$
+
+# pattern = r'\$MQ\$(.*?)\$/MQ\$|\$Q\$(.*?)\$/Q\$|\$A\$(.*?)\$/A\$'
+
+# main_question_pattern = r'@\$MQ\$@(.*?)@\$MQ_END\$@'
+# question_pattern = r'@\$Q\$@(.*?)@\$Q_END\$@'
+# answer_pattern = r'@\$A\$@(.*?)@\$A_END\$@'
+
+
+def extract_all_text_sequentially(text):
+    if not isinstance(text, str):
+        print(f"Warning: extract_all_text_sequentially received non-string input ({type(text)})")
+        return []
+
+    # pattern = r'@\$MQ\$@(.*?)@\$MQ_END\$@|@\$Q\$@(.*?)@\$Q_END\$@|@\$A\$@(.*?)@\$A_END\$@'
+    # matches = re.finditer(pattern, text, re.DOTALL)
+
+    pattern = r'@\$MQ\$@(.*?)@\$MQ_END\$@|@\$Q\$@(.*?)@\$Q_END\$@|@\$A\$@(.*?)@\$A_END\$@'
+    matches = re.finditer(pattern, text, re.DOTALL | re.IGNORECASE)
+
+
+    result = []
+    current = {}
+    
+    for match in matches:
+        mq, q, a = match.groups()
+        if mq:
+            if current:
+                result.append(current)
+                current = {}
+            current["main_question"] = mq.strip()
+        elif q:
+            if current and "question" in current:
+                result.append(current)
+                current = {}
+            current["question"] = q.strip()
+        elif a:
+            current["answer"] = a.strip()
+            result.append(current)
+            current = {}
+
+    if current:
+        result.append(current)
+
+    return result
+
+
 
 def extract_all_text_between_as_ae(text):
     if not isinstance(text, str):  # Ensure text is a string
