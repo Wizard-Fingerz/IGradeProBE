@@ -24,7 +24,7 @@ from app.test_ocr_main.main import extract_text_with_test_ocr
 from .models import StudentScript, ScriptPage
 from rest_framework.decorators import action
 from .serializers import StudentScriptSerializer
-from .google_ocr_modified import detect_document_modified, extract_all_text_between_as_ae, find_matching_question
+from .google_ocr_modified import detect_document_modified, extract_all_text_between_as_ae, extract_all_text_sequentially, find_matching_question
 
 
 class StudentScriptViewSet(viewsets.ModelViewSet):
@@ -245,7 +245,11 @@ class BulkUploadScriptView(APIView):
 
                         print(f"Extracted text: {extracted_text}")
 
-                        extracted_text = extract_all_text_between_as_ae(
+                        # extracted_text = extract_all_text_between_as_ae(
+                        #     extracted_text)
+                        
+                        
+                        extracted_text = extract_all_text_sequentially(
                             extracted_text)
                      
                      

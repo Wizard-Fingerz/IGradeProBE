@@ -90,7 +90,10 @@ def extract_all_text_sequentially(text):
     # matches = re.finditer(pattern, text, re.DOTALL)
 
     # pattern = r'@\$MQ\$@(.*?)@\$MQ_END\$@|@\$Q\$@(.*?)@\$Q_END\$@|@\$A\$@(.*?)@\$A_END\$@'
-    pattern = r'\$MQ\$(.*?)\$/MQ\$|\$Q\$(.*?)\$/Q\$|\$A\$(.*?)\$/A\$'
+    # pattern = r'\$MQ\$(.*?)\$#MQ\$|\$Q\$(.*?)\$#Q\$|\$A\$(.*?)\$#A\$'
+    # pattern = r'[\$S]MQ[\$S](.*?)[\$S]#MQ[\$S]|[\$S]Q[\$S](.*?)[\$S]#Q[\$S]|[\$S]A[\$S](.*?)[\$S]#A[\$S]'
+    pattern = r'[\$S]MQ[\$S](.*?)[\$S][#H]MQ[\$S]|[\$S]Q[\$S](.*?)[\$S][#H]Q[\$S]|[\$S]A[\$S](.*?)[\$S][#H]A[\$S]'
+
     matches = re.finditer(pattern, text, re.DOTALL | re.IGNORECASE)
 
 
