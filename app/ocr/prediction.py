@@ -7,9 +7,6 @@ from nltk.stem import WordNetLemmatizer
 import warnings
 
 warnings.simplefilter("ignore")
-
-
-
 import joblib
 import spacy
 from nltk.tokenize import word_tokenize

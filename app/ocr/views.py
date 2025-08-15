@@ -241,7 +241,10 @@ class BulkUploadScriptView(APIView):
                         
                         print(f"Processing image: {image_path}")
 
-                        extracted_text = extract_text_with_test_ocr(default_storage.path(image_path))
+                        # extracted_text = extract_text_with_test_ocr(default_storage.path(image_path))
+
+                        extracted_text = detect_document_modified(
+                                default_storage.path(image_path), settings.GOOGLE_APPLICATION_CREDENTIALS)
 
                         print(f"Extracted text: {extracted_text}")
 

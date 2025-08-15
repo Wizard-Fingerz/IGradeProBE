@@ -77,4 +77,6 @@ __pycache__/
 **/models/
 **/output/
 **/crops/
+client_secret.json
+jsn.json
 
