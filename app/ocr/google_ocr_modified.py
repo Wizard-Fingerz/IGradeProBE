@@ -63,68 +63,99 @@ import re
 
 
 def extract_all_text_sequentially(text):
+    """
+    Extracts main questions, questions, and answers from text using regex.
+    If an ending marker is missing, the function will break to a new question/answer
+    whenever it finds the beginning marker of the next question/answer.
+    If the ending marker is present, it will use it as the boundary.
+    """
     if not isinstance(text, str):
         print(f"Warning: extract_all_text_sequentially received non-string input ({type(text)})")
         return []
 
-    # pattern = r'@\$MQ\$@(.*?)@\$MQ_END\$@|@\$Q\$@(.*?)@\$Q_END\$@|@\$A\$@(.*?)@\$A_END\$@'
-    # matches = re.finditer(pattern, text, re.DOTALL)
+    # Define start and end markers for each type
+    MQ_START = r'[\$S](?:START|SMART)'
+    MQ_END = r'[\$S]STOP'
+    Q_START = r'[\$S]BEGIN'
+    Q_END = r'[\$S]{2}END'
+    A_START = r'[\$S]INIT'
+    A_END = r'[\$S]{2}HALT'
 
-    # pattern = r'@\$MQ\$@(.*?)@\$MQ_END\$@|@\$Q\$@(.*?)@\$Q_END\$@|@\$A\$@(.*?)@\$A_END\$@'
-    # pattern = r'\$MQ\$(.*?)\$#MQ\$|\$Q\$(.*?)\$#Q\$|\$A\$(.*?)\$#A\$'
-    # pattern = r'[\$S]MQ[\$S](.*?)[\$S]#MQ[\$S]|[\$S]Q[\$S](.*?)[\$S]#Q[\$S]|[\$S]A[\$S](.*?)[\$S]#A[\$S]'
-    # pattern = r'[\$S][START|smart][\$S](.*?)[\$S][STOP|sTOP][\$S]|[\$S][BEGIN|bEGIN][\$S](.*?)[\$S][END|eND][\$S]|[\$S][INIT|iNIT][\$S](.*?)[\$S][#H][HALT|hALT][\$S]'
-    # pattern = (
-    #     r'[\$S](?:START|smart)[\$S](.*?)[\$S](?:STOP|sTOP)|'
-    #     r'[\$S](?:BEGIN|bEGIN)[\$S](.*?)[\$S](?:END|eND)|'
-    #     r'[\$S](?:INIT|iNIT)[\$S](.*?)[\$S](?:HALT|hALT)'
-    # )
-
-    # pattern = (
-    #     r'[\$S](?:START|SMART)(.*?)[\$S]STOP'
-    #     r'|[\$S]BEGIN(.*?)[\$S]{2}END'
-    #     r'|[\$S]INIT(.*?)[\$S]{2}HALT'
-    # )
-
-    pattern = (
-        r'[\$S](?:START|SMART)(.*?)[\$S]STOP'       # Main Question: START or SMART
-        r'|[\$S]BEGIN(.*?)[\$S]{2}END'              # Question
-        r'|[\$S]INIT(.*?)[\$S]{2}HALT'              # Answer
+    # Build a regex that matches any of the start markers, capturing the marker and its position
+    start_pattern = re.compile(
+        rf'({MQ_START})|({Q_START})|({A_START})',
+        re.IGNORECASE
     )
 
+    # Helper to find the next start marker after a given index
+    def find_next_start(text, start_idx):
+        match = start_pattern.search(text, start_idx)
+        return match.start() if match else len(text)
 
-
-    # matches = re.finditer(pattern, text, re.DOTALL | re.IGNORECASE)
-    matches = re.finditer(pattern, text, re.DOTALL | re.IGNORECASE)
-
-
-    print(matches)
     result = []
     current = {}
-    
-    for match in matches:
-        mq, q, a = match.groups()
-        if mq:
+
+    idx = 0
+    text_len = len(text)
+    while idx < text_len:
+        # Search for the next start marker
+        match = start_pattern.search(text, idx)
+        if not match:
+            break
+        marker = match.group(0)
+        start_idx = match.end()
+
+        # Determine which type of marker it is and set the appropriate end marker
+        if re.match(MQ_START, marker, re.IGNORECASE):
+            end_regex = re.compile(MQ_END, re.IGNORECASE)
+            key = "main_question"
+        elif re.match(Q_START, marker, re.IGNORECASE):
+            end_regex = re.compile(Q_END, re.IGNORECASE)
+            key = "question"
+        elif re.match(A_START, marker, re.IGNORECASE):
+            end_regex = re.compile(A_END, re.IGNORECASE)
+            key = "answer"
+        else:
+            # Should not happen
+            idx = start_idx
+            continue
+
+        # Try to find the ending marker for this section
+        end_match = end_regex.search(text, start_idx)
+        next_start = find_next_start(text, start_idx)
+        if end_match and end_match.start() < next_start:
+            # Ending marker found before next start marker
+            content_end = end_match.start()
+            next_idx = end_match.end()
+        else:
+            # No ending marker, or next start marker comes first
+            content_end = next_start
+            next_idx = next_start
+
+        content = text[start_idx:content_end].strip()
+
+        # If starting a new main_question or question, flush current if needed
+        if key == "main_question":
             if current:
                 result.append(current)
                 current = {}
-            current["main_question"] = mq.strip()
-        elif q:
+            current[key] = content
+        elif key == "question":
             if current and "question" in current:
                 result.append(current)
                 current = {}
-            current["question"] = q.strip()
-        elif a:
-            current["answer"] = a.strip()
+            current[key] = content
+        elif key == "answer":
+            current[key] = content
             result.append(current)
             current = {}
 
-    
+        idx = next_idx
+
     if current:
         result.append(current)
 
     return result
-
 
 
 def extract_all_text_between_as_ae(text):

@@ -44,7 +44,32 @@ class PredictionService:
         tokens = [lemmatizer.lemmatize(word) for word in tokens]
         return ' '.join(tokens)
 
-    def calculate_combined_similarity(self, student_answer, examiner_answer, comprehension, weights):
+    # def calculate_combined_similarity(self, student_answer, examiner_answer, comprehension, weights):
+    #     # Check if any of the input text strings are empty
+    #     if not student_answer or not examiner_answer or not comprehension:
+    #         return 0.0  # Return zero similarity if any input text string is empty
+        
+    #     # Preprocess the text
+    #     preprocessed_student_answer = self.preprocess_text(student_answer)
+    #     preprocessed_examiner_answer = self.preprocess_text(examiner_answer)
+    #     preprocessed_comprehension = self.preprocess_text(comprehension)
+        
+    #     # Calculate similarity between student answer and examiner answer
+    #     similarity_examiner = nlp(preprocessed_student_answer).similarity(nlp(preprocessed_examiner_answer))
+        
+    #     # Calculate similarity between student answer and comprehension
+    #     similarity_comprehension = nlp(preprocessed_student_answer).similarity(nlp(preprocessed_comprehension))
+
+        
+    #     # Combine similarity scores using weights
+    #     combined_similarity = (weights['examiner'] * similarity_examiner) + (weights['comprehension'] * similarity_comprehension)
+
+    #     print(combined_similarity)
+        
+    #     return combined_similarity
+
+
+    def calculate_combined_similarity(self, student_answer, examiner_answer, comprehension, weights=None):
         # Check if any of the input text strings are empty
         if not student_answer or not examiner_answer or not comprehension:
             return 0.0  # Return zero similarity if any input text string is empty
@@ -59,14 +84,37 @@ class PredictionService:
         
         # Calculate similarity between student answer and comprehension
         similarity_comprehension = nlp(preprocessed_student_answer).similarity(nlp(preprocessed_comprehension))
-
         
-        # Combine similarity scores using weights
-        combined_similarity = (weights['examiner'] * similarity_examiner) + (weights['comprehension'] * similarity_comprehension)
+        # If no weights provided, determine them dynamically
+        if weights is None:
+            base_examiner = 0.2
+            base_comprehension = 0.8
+            diff = similarity_examiner - similarity_comprehension
+            
+            if diff > 0:  # Examiner similarity is higher
+                shift = min(diff * 0.5, 0.5)  # limit shift
+                weights = {
+                    'examiner': min(base_examiner + shift, 0.7),
+                    'comprehension': max(base_comprehension - shift, 0.3)
+                }
+            else:  # Comprehension similarity is higher
+                shift = min(abs(diff) * 0.5, 0.5)
+                weights = {
+                    'examiner': max(base_examiner - shift, 0.3),
+                    'comprehension': min(base_comprehension + shift, 0.7)
+                }
 
-        print(combined_similarity)
+        # Combine similarity scores using weights
+        combined_similarity = (weights['examiner'] * similarity_examiner) + \
+                            (weights['comprehension'] * similarity_comprehension)
+
+        print(f"Examiner sim: {similarity_examiner:.3f}, Comprehension sim: {similarity_comprehension:.3f}, "
+            f"Weights: {weights}, Combined: {combined_similarity:.3f}")
         
         return combined_similarity
+
+
+
 
     def predict(self, question_id, comprehension, question, examiner_answer, student_answer, question_score, suppress_warning=True):
         # Specify weights for examiner answer and comprehension
