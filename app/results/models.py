@@ -14,6 +14,7 @@ class ExamResult(models.Model):
     student_score = models.IntegerField(null=True, blank=True)
     similarity_score = models.FloatField(null=True, blank=True)  # New field to store similarity score
     attempted = models.BooleanField(default=True)  # New field to indicate if the question was attempted
+    created_at = models.DateTimeField(auto_now_add=True)
 
     @property
     def question_text(self):
@@ -23,6 +24,10 @@ class ExamResult(models.Model):
     @property
     def candidate_number(self):
         return self.student.candidate_number
+    
+    @property
+    def examination_number(self):
+        return self.student.examination_number
 
     @property
     def question_number(self):

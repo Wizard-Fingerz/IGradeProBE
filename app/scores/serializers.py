@@ -10,9 +10,9 @@ class ExamResultScoreSerializer(serializers.ModelSerializer):
     class Meta:
         model = ExamResultScore
         fields = ['id', 'exam_total_mark', 'student', 'exam_score', 'student_name', 'student_detials',
-                  'grade', 'subject_detials', 'percentage_score', 'effective_total_marks']
+                  'grade', 'subject_detials', 'percentage_score', 'effective_total_marks', 'examination_number']
         read_only_fields = ['grade', 'exam_total_mark', 'student_name', 'student_detials',
-                            'subject_detials', 'percentage_score', 'effective_total_marks']
+                            'subject_detials', 'percentage_score', 'effective_total_marks', 'examination_number']
 
 
 class AnswerScoreSerializer(serializers.ModelSerializer):
