@@ -3,7 +3,7 @@ from django.contrib import admin
 from import_export.admin import ImportExportModelAdmin
 
 from app.exams.models import Exam
-from app.ocr.models import StudentScript
+from app.ocr.models import ScriptPage, StudentScript
 from app.questions.models import SubjectQuestion
 from app.results.models import ExamResult
 from app.scores.models import ExamResultScore
@@ -46,9 +46,22 @@ class ExamResultScoreAdmin(ImportExportModelAdmin):
     # list_filter = ['subject', 'question_number']
 
 
-@admin.register(StudentScript)
-class StudentScripttScoreAdmin(ImportExportModelAdmin):
-    list_display = ('subject_id', 'subject', 'uploaded_at')
+# You are getting a circular import error because your StudentScript model uses a ForeignKey to Student,
+# which is imported from account.students.models. If account.students.models (or its admin.py) also imports
+# anything from app.ocr.models (directly or indirectly), this creates a circular import at Django startup.
+# 
+# To avoid this, you can register StudentScript using admin.site.register instead of the decorator,
+# and define the admin class separately. This delays the model lookup until after all models are loaded.
+
+class StudentScriptAdmin(ImportExportModelAdmin):
+    list_display = ('student_id', 'subject', 'uploaded_at')
+
+admin.site.register(StudentScript, StudentScriptAdmin)
+
+@admin.register(ScriptPage)
+class ScriptPageScoreAdmin(ImportExportModelAdmin):
+    list_display = ('script', 'image', 'extracted_answers', 'page_number')
+
 
 
 admin.site.site_header = 'Intelligent Essay Grading Pro Administration Dashboard'
