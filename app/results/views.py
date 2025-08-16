@@ -24,7 +24,7 @@ class CustomPagination(pagination.PageNumberPagination):
         })
 
 class ExamResultViewSet(viewsets.ModelViewSet):
-    queryset = ExamResult.objects.all()
+    queryset = ExamResult.objects.all().order_by('-created_at')
     serializer_class = ExamResultSerializer
     pagination_class = CustomPagination
 

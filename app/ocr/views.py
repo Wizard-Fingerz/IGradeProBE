@@ -266,7 +266,7 @@ class BulkUploadScriptView(APIView):
                                                     # Perform OCR
                         extracted_text = detect_document_modified(
                             default_storage.path(image_path), settings.GOOGLE_APPLICATION_CREDENTIALS)
-
+                        
                         combined_text += "\n" + extracted_text
 
                     # Extract and grade answers
