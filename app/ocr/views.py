@@ -182,7 +182,9 @@ class BulkUploadScriptView(APIView):
     parser_classes = [MultiPartParser]
 
 
+
     def post(self, request):
+        print(request)
         uploaded_file = request.FILES.get("file")
         subject_id = request.data.get("subject_id")
 
@@ -202,39 +204,33 @@ class BulkUploadScriptView(APIView):
         zip_full_path = default_storage.path(zip_path)
 
         try:
-            
-            
+            print('here to extract zip')
             with zipfile.ZipFile(zip_full_path, "r") as zip_ref:
-                # Load CSV into memory
+                # Load CSV
                 csv_file_name = [f for f in zip_ref.namelist() if f.endswith(".csv")][0]
                 csv_file_data = zip_ref.read(csv_file_name).decode("utf-8").splitlines()
                 csv_rows = list(csv.DictReader(csv_file_data))
 
-                # Get list of all exam numbers
+                # Build exam_number -> image map
                 exam_numbers = {row["examination_number"] for row in csv_rows}
-
-                # Step 1: Build mapping of exam_number -> unique image file names
                 image_map = {exam_num: set() for exam_num in exam_numbers}
                 for file_name in zip_ref.namelist():
                     if file_name.lower().endswith((".png", ".jpg", ".jpeg")):
                         for exam_num in exam_numbers:
                             if f"{exam_num}" in file_name:
-                                image_map[exam_num].add(file_name)  # set avoids duplicates
+                                image_map[exam_num].add(file_name)
 
-                # Step 2: Process each student once
-                # Step 2: Process each student once
                 processed_students = set()
-
-                grading_count = 0  # Add this before starting the main for loop
+                grading_count = 0
 
                 for row in csv_rows:
                     exam_num = row["examination_number"]
 
-                    # Skip if already processed
                     if exam_num in processed_students:
                         continue
-
                     processed_students.add(exam_num)
+
+                    print('getting or creating student')
 
                     student, _ = Student.objects.get_or_create(
                         center_number=row["centre_number"],
@@ -248,30 +244,46 @@ class BulkUploadScriptView(APIView):
 
                     try:
                         exam = Exam.objects.get(subject=subject)
+                        print(exam)
                     except Exam.DoesNotExist:
-                        continue
+                        return Response(
+                            {"error": f"No exam found for subject {subject.id}"},
+                            status=status.HTTP_400_BAD_REQUEST
+                        )
 
-                    StudentScript.objects.create(student_id=student, subject=subject)
 
-                    # Combine OCR output for all images for this student
+                    # keep reference
+                    student_script = StudentScript.objects.create(student_id=student, subject=subject)
+                    print(student_script)
+
                     combined_text = ""
-                    for file_name in sorted(image_map.get(exam_num, [])):
+                    for idx, file_name in enumerate(sorted(image_map.get(exam_num, [])), start=1):
                         file_data = zip_ref.read(file_name)
                         image_path = f"scripts/{exam_num}/{os.path.basename(file_name)}"
 
+                        # save image always
                         if not default_storage.exists(image_path):
                             default_storage.save(image_path, ContentFile(file_data))
 
-                        # extracted_text = process_ocr_pipeline(default_storage.path(image_path))
-                                                    # Perform OCR
+                        # OCR always runs
                         extracted_text = detect_document_modified(
-                            default_storage.path(image_path), settings.GOOGLE_APPLICATION_CREDENTIALS)
-                        
+                            default_storage.path(image_path), settings.GOOGLE_APPLICATION_CREDENTIALS
+                        )
+
+                        print('extracted text', extracted_text)
+
                         combined_text += "\n" + extracted_text
 
-                    # Extract and grade answers
-                    extracted_text_from_regex = extract_all_text_sequentially(combined_text)
+                        # ✅ create ScriptPage per image
+                        ScriptPage.objects.create(
+                            script=student_script,
+                            image=image_path,
+                            extracted_text=extracted_text,
+                            page_number=idx
+                        )
 
+                    # Now grade
+                    extracted_text_from_regex = extract_all_text_sequentially(combined_text)
                     for qa in extracted_text_from_regex:
                         question_text = qa.get("question")
                         student_answer = qa.get("answer")
@@ -279,11 +291,9 @@ class BulkUploadScriptView(APIView):
                             question = find_matching_question(question_text)
                             if question:
                                 self.grade_answer(student, question, student_answer)
-                                grading_count += 1  # Increment counter
-               
+                                grading_count += 1
+
                 print(f"✅ Total grading operations performed: {grading_count}")
-
-
 
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
