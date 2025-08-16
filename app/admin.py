@@ -3,6 +3,7 @@ from django.contrib import admin
 from import_export.admin import ImportExportModelAdmin
 
 from app.exams.models import Exam
+from app.ocr.models import StudentScript
 from app.questions.models import SubjectQuestion
 from app.results.models import ExamResult
 from app.scores.models import ExamResultScore
@@ -44,6 +45,10 @@ class ExamResultScoreAdmin(ImportExportModelAdmin):
     # search_fields = ['subject', 'question_number']
     # list_filter = ['subject', 'question_number']
 
+
+@admin.register(StudentScript)
+class StudentScripttScoreAdmin(ImportExportModelAdmin):
+    list_display = ('subject_id', 'subject', 'uploaded_at')
 
 
 admin.site.site_header = 'Intelligent Essay Grading Pro Administration Dashboard'

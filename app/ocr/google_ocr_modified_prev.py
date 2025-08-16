@@ -7,8 +7,27 @@ import re
 
 from app.questions.models import SubjectQuestion
 
-logging.basicConfig(level=logging.INFO)
 
+# def detect_document_modified(image_path, json_path):
+
+#     # Set up the Google Cloud Vision client
+#     credentials = service_account.Credentials.from_service_account_file(
+#         json_path)
+#     client = vision.ImageAnnotatorClient(credentials=credentials)
+
+#     with io.open(image_path, 'rb') as image_file:
+#         content = image_file.read()
+
+#     image = vision.Image(content=content)
+
+#     response = client.document_text_detection(image=image)
+
+#     extracted_text = response.full_text_annotation.text
+#     # print(TextOutput)
+#     return extracted_text
+
+
+logging.basicConfig(level=logging.INFO)
 
 
 def detect_document_modified(image_path, json_path):
@@ -73,32 +92,11 @@ def extract_all_text_sequentially(text):
     # pattern = r'@\$MQ\$@(.*?)@\$MQ_END\$@|@\$Q\$@(.*?)@\$Q_END\$@|@\$A\$@(.*?)@\$A_END\$@'
     # pattern = r'\$MQ\$(.*?)\$#MQ\$|\$Q\$(.*?)\$#Q\$|\$A\$(.*?)\$#A\$'
     # pattern = r'[\$S]MQ[\$S](.*?)[\$S]#MQ[\$S]|[\$S]Q[\$S](.*?)[\$S]#Q[\$S]|[\$S]A[\$S](.*?)[\$S]#A[\$S]'
-    # pattern = r'[\$S][START|smart][\$S](.*?)[\$S][STOP|sTOP][\$S]|[\$S][BEGIN|bEGIN][\$S](.*?)[\$S][END|eND][\$S]|[\$S][INIT|iNIT][\$S](.*?)[\$S][#H][HALT|hALT][\$S]'
-    # pattern = (
-    #     r'[\$S](?:START|smart)[\$S](.*?)[\$S](?:STOP|sTOP)|'
-    #     r'[\$S](?:BEGIN|bEGIN)[\$S](.*?)[\$S](?:END|eND)|'
-    #     r'[\$S](?:INIT|iNIT)[\$S](.*?)[\$S](?:HALT|hALT)'
-    # )
+    pattern = r'[\$S]MQ[\$S](.*?)[\$S][#H]MQ[\$S]|[\$S]Q[\$S](.*?)[\$S][#H]Q[\$S]|[\$S]A[\$S](.*?)[\$S][#H]A[\$S]'
 
-    # pattern = (
-    #     r'[\$S](?:START|SMART)(.*?)[\$S]STOP'
-    #     r'|[\$S]BEGIN(.*?)[\$S]{2}END'
-    #     r'|[\$S]INIT(.*?)[\$S]{2}HALT'
-    # )
-
-    pattern = (
-        r'[\$S](?:START|SMART)(.*?)[\$S]STOP'       # Main Question: START or SMART
-        r'|[\$S]BEGIN(.*?)[\$S]{2}END'              # Question
-        r'|[\$S]INIT(.*?)[\$S]{2}HALT'              # Answer
-    )
-
-
-
-    # matches = re.finditer(pattern, text, re.DOTALL | re.IGNORECASE)
     matches = re.finditer(pattern, text, re.DOTALL | re.IGNORECASE)
 
 
-    print(matches)
     result = []
     current = {}
     
@@ -119,7 +117,6 @@ def extract_all_text_sequentially(text):
             result.append(current)
             current = {}
 
-    
     if current:
         result.append(current)
 
@@ -167,33 +164,12 @@ def extract_all_text_between_as_ae(text):
     return result
 
 
-# def find_matching_question(extracted_question):
-#     all_questions = SubjectQuestion.objects.values_list("question", flat=True)
-#     print(all_questions)
-#     best_match = get_close_matches(
-#         extracted_question, all_questions, n=1, cutoff=0.6)
-
-#     if best_match:
-#         return SubjectQuestion.objects.filter(question=best_match[0]).first()
-#     return None  # No good match found
-
-from difflib import get_close_matches
-
 def find_matching_question(extracted_question):
-    # Get only parent questions (parent_question is None)
-    parent_questions = SubjectQuestion.objects.filter(parent_question__isnull=True).values_list("question", flat=True)
-    
-    best_match = get_close_matches(extracted_question, parent_questions, n=1, cutoff=0.9)
+    all_questions = SubjectQuestion.objects.values_list("question", flat=True)
+    print(all_questions)
+    best_match = get_close_matches(
+        extracted_question, all_questions, n=1, cutoff=0.6)
 
     if best_match:
-        # Return the matched parent question object
-        return SubjectQuestion.objects.filter(question=best_match[0], parent_question__isnull=True).first()
-
-    # No good match in parents, now try subquestions
-    sub_questions = SubjectQuestion.objects.filter(parent_question__isnull=False).values_list("question", flat=True)
-    best_match_sub = get_close_matches(extracted_question, sub_questions, n=1, cutoff=0.9)
-
-    if best_match_sub:
-        return SubjectQuestion.objects.filter(question=best_match_sub[0], parent_question__isnull=False).first()
-
+        return SubjectQuestion.objects.filter(question=best_match[0]).first()
     return None  # No good match found

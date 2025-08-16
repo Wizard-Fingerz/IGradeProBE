@@ -176,8 +176,11 @@ class UploadScriptView(APIView):
 
 
 
+
+
 class BulkUploadScriptView(APIView):
     parser_classes = [MultiPartParser]
+
 
     def post(self, request):
         uploaded_file = request.FILES.get("file")
@@ -189,100 +192,108 @@ class BulkUploadScriptView(APIView):
         if not subject_id:
             return Response({"error": "No subject provided"}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Get the subject
         try:
             subject = Subject.objects.get(id=subject_id)
         except Subject.DoesNotExist:
             return Response({"error": "Invalid subject ID"}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Save ZIP file temporarily
         zip_path = default_storage.save(
             f"temp/{uploaded_file.name}", ContentFile(uploaded_file.read()))
         zip_full_path = default_storage.path(zip_path)
 
-        # try:
-        with zipfile.ZipFile(zip_full_path, "r") as zip_ref:
-            # Extract and read the CSV file
-            csv_file_name = [
-                f for f in zip_ref.namelist() if f.endswith(".csv")][0]
-            csv_file_data = zip_ref.read(
-                csv_file_name).decode("utf-8").splitlines()
-            csv_reader = csv.DictReader(csv_file_data)
-
-            for row in csv_reader:
-                student, created = Student.objects.get_or_create(
-                    center_number=row["centre_number"],
-                    candidate_number=row["candidate_number"],
-                    examination_number=row["examination_number"],
-                    defaults={
-                        "exam_type": row.get("exam_type", None),
-                        "year": row.get("year", None),
-                    },
-                )
-
-                # ✅ Get the corresponding exam for the subject
-                try:
-                    exam = Exam.objects.get(subject=subject)
-                except Exam.DoesNotExist:
-                    continue  # Skip if no exam is found for subject
-
-
-                student_script = StudentScript.objects.create(
-                    student_id=student,
-                    subject=subject,
-                )
-
-                for file_name in zip_ref.namelist():
-                    if file_name.endswith((".png", ".jpg", ".jpeg")) and f"{row['examination_number']}" in file_name:
-                        file_data = zip_ref.read(file_name)
-                        image_path = f"scripts/{row['examination_number']}/{file_name}"
-                        default_storage.save(
-                            image_path, ContentFile(file_data))
-                        
-                        print(f"Processing image: {image_path}")
-
-                        # extracted_text = extract_text_with_test_ocr(default_storage.path(image_path))
-
-                        extracted_text = detect_document_modified(
-                                default_storage.path(image_path), settings.GOOGLE_APPLICATION_CREDENTIALS)
-
-                        print(f"Extracted text: {extracted_text}")
-
-                        # extracted_text = extract_all_text_between_as_ae(
-                        #     extracted_text)
-                        
-                        
-                        extracted_text = extract_all_text_sequentially(
-                            extracted_text)
-                     
-                     
-                        # Iterate over extracted Q&A
-                        for qa in extracted_text:
-                            question_text = qa.get("question")
-                            student_answer = qa.get("answer")
-                            print(qa)
-                            print(f"Question: {question_text}")
-                            print(f"First Answer Extracted: {student_answer}")
-
-                            if question_text and student_answer:
-                                question = find_matching_question(
-                                    question_text)
-                                print(f"Question: {question_text}")
-                                print(f"Answer: {student_answer}")
-                                print(f"Question: {question}")
-
-                                if question:
-                                    self.grade_answer(
-                                        student, question, student_answer)
-                
-                self.update_parent_question_scores(student, exam)
+        try:
             
-        # except Exception as e:
-        #     return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-        # finally:
-        #     os.remove(zip_full_path)  # Cleanup temporary ZIP file
+            
+            with zipfile.ZipFile(zip_full_path, "r") as zip_ref:
+                # Load CSV into memory
+                csv_file_name = [f for f in zip_ref.namelist() if f.endswith(".csv")][0]
+                csv_file_data = zip_ref.read(csv_file_name).decode("utf-8").splitlines()
+                csv_rows = list(csv.DictReader(csv_file_data))
+
+                # Get list of all exam numbers
+                exam_numbers = {row["examination_number"] for row in csv_rows}
+
+                # Step 1: Build mapping of exam_number -> unique image file names
+                image_map = {exam_num: set() for exam_num in exam_numbers}
+                for file_name in zip_ref.namelist():
+                    if file_name.lower().endswith((".png", ".jpg", ".jpeg")):
+                        for exam_num in exam_numbers:
+                            if f"{exam_num}" in file_name:
+                                image_map[exam_num].add(file_name)  # set avoids duplicates
+
+                # Step 2: Process each student once
+                # Step 2: Process each student once
+                processed_students = set()
+
+                grading_count = 0  # Add this before starting the main for loop
+
+                for row in csv_rows:
+                    exam_num = row["examination_number"]
+
+                    # Skip if already processed
+                    if exam_num in processed_students:
+                        continue
+
+                    processed_students.add(exam_num)
+
+                    student, _ = Student.objects.get_or_create(
+                        center_number=row["centre_number"],
+                        candidate_number=row["candidate_number"],
+                        examination_number=exam_num,
+                        defaults={
+                            "exam_type": row.get("exam_type"),
+                            "year": row.get("year"),
+                        },
+                    )
+
+                    try:
+                        exam = Exam.objects.get(subject=subject)
+                    except Exam.DoesNotExist:
+                        continue
+
+                    StudentScript.objects.create(student_id=student, subject=subject)
+
+                    # Combine OCR output for all images for this student
+                    combined_text = ""
+                    for file_name in sorted(image_map.get(exam_num, [])):
+                        file_data = zip_ref.read(file_name)
+                        image_path = f"scripts/{exam_num}/{os.path.basename(file_name)}"
+
+                        if not default_storage.exists(image_path):
+                            default_storage.save(image_path, ContentFile(file_data))
+
+                        # extracted_text = process_ocr_pipeline(default_storage.path(image_path))
+                                                    # Perform OCR
+                        extracted_text = detect_document_modified(
+                            default_storage.path(image_path), settings.GOOGLE_APPLICATION_CREDENTIALS)
+
+                        combined_text += "\n" + extracted_text
+
+                    # Extract and grade answers
+                    extracted_text_from_regex = extract_all_text_sequentially(combined_text)
+
+                    for qa in extracted_text_from_regex:
+                        question_text = qa.get("question")
+                        student_answer = qa.get("answer")
+                        if question_text and student_answer:
+                            question = find_matching_question(question_text)
+                            if question:
+                                self.grade_answer(student, question, student_answer)
+                                grading_count += 1  # Increment counter
+               
+                print(f"✅ Total grading operations performed: {grading_count}")
+
+
+
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        finally:
+            os.remove(zip_full_path)
 
         return Response({"message": "Upload and processing complete"}, status=status.HTTP_201_CREATED)
+
+
+
 
     def grade_answer(self, student, question, student_answer):
         prediction_service = PredictionService()
@@ -295,10 +306,10 @@ class BulkUploadScriptView(APIView):
             student_answer=student_answer
         )
 
-        print(
-            f"Grading student {student.id} for question '{question.question}'")
-        print(f"Student answer: {student_answer}")
-        print(f"Score awarded: {student_score}")
+        # print(
+        #     f"Grading student {student.id} for question '{question.question}'")
+        # print(f"Student answer: {student_answer}")
+        # print(f"Score awarded: {student_score}")
 
         exam = Exam.objects.get(subject = question.subject)
 
@@ -319,7 +330,7 @@ class BulkUploadScriptView(APIView):
             exam_result.attempted = True
             exam_result.save()
 
-        self.detect_plagiarism(question.id, student_answer, exam_result)
+        # self.detect_plagiarism(question.id, student_answer, exam_result)
 
         # Ensure question.subject is a related instance
         if isinstance(question.subject, str):
@@ -335,7 +346,7 @@ class BulkUploadScriptView(APIView):
         else:
             total_score = 0  # Avoid query failure if no subject is found
 
-        print(f"Total score for student {student.id}: {total_score}")
+        # print(f"Total score for student {student.id}: {total_score}")
 
         exam_result_score, _ = ExamResultScore.objects.get_or_create(
             student=student, subject=question.subject,
@@ -377,18 +388,19 @@ class BulkUploadScriptView(APIView):
 
 
     
-    def detect_plagiarism(self, question_id, new_answer, new_exam_result):
-        existing_results = ExamResult.objects.filter(
-            question_id=question_id).exclude(id=new_exam_result.id)
+    # def detect_plagiarism(self, question_id, new_answer, new_exam_result):
+    #     existing_results = ExamResult.objects.filter(
+    #         question_id=question_id).exclude(id=new_exam_result.id)
 
-        for result in existing_results:
-            similarity = textdistance.jaccard(
-                new_answer, result.student_answer)
+    #     for result in existing_results:
+    #         similarity = textdistance.jaccard(
+    #             new_answer, result.student_answer)
 
-            new_exam_result.similarity_score = similarity
-            result.similarity_score = similarity
-            new_exam_result.save()
-            result.save()
+    #         new_exam_result.similarity_score = similarity
+    #         result.similarity_score = similarity
+    #         new_exam_result.save()
+    #         result.save()
+
 
 
 class ScriptOutputView(APIView):

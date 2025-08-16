@@ -32,6 +32,11 @@ class ExamResultScore(models.Model):
     def student_detials(self):
         return f"{self.student.get_full_name()} - {self.student.candidate_number}"
     
+    @property
+    def examination_number(self):
+        return self.student.examination_number
+
+
 
     def __str__(self):
         return f"{self.student}'s exam score for {self.subject}"
@@ -40,7 +45,8 @@ class ExamResultScore(models.Model):
         if self.effective_total_marks == 0:
             self.percentage_score = 0
         else:
-            percent_score = (self.exam_score / self.effective_total_marks) * 100
+            # percent_score = (self.exam_score / self.effective_total_marks) * 100
+            percent_score = (self.exam_score / self.exam_total_mark) * 100
             # self.percentage_score = percent_score
             self.percentage_score = round(percent_score)  # Round to the nearest integer       
             if percent_score >= 75:
