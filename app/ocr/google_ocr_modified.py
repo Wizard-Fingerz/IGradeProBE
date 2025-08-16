@@ -62,50 +62,144 @@ import re
 # answer_pattern = r'@\$A\$@(.*?)@\$A_END\$@'
 
 
+# def extract_all_text_sequentially(text):
+#     """
+#     Extracts main questions, questions, and answers from text using regex.
+#     If an ending marker is missing, the function will break to a new question/answer
+#     whenever it finds the beginning marker of the next question/answer.
+#     If the ending marker is present, it will use it as the boundary.
+#     """
+#     if not isinstance(text, str):
+#         print(f"Warning: extract_all_text_sequentially received non-string input ({type(text)})")
+#         return []
+
+#     # Define start and end markers for each type
+#     MQ_START = r'[\$S](?:START|SMART)'
+#     MQ_END = r'[\$S]STOP'
+#     Q_START = r'[\$S]BEGIN'
+#     Q_END = r'[\$S]{2}END'
+#     A_START = r'[\$S]INIT'
+#     A_END = r'[\$S]{2}HALT'
+
+#     # Build a regex that matches any of the start markers, capturing the marker and its position
+#     start_pattern = re.compile(
+#         rf'({MQ_START})|({Q_START})|({A_START})',
+#         re.IGNORECASE
+#     )
+
+#     # Helper to find the next start marker after a given index
+#     def find_next_start(text, start_idx):
+#         match = start_pattern.search(text, start_idx)
+#         return match.start() if match else len(text)
+
+#     result = []
+#     current = {}
+
+#     idx = 0
+#     text_len = len(text)
+#     while idx < text_len:
+#         # Search for the next start marker
+#         match = start_pattern.search(text, idx)
+#         if not match:
+#             break
+#         marker = match.group(0)
+#         start_idx = match.end()
+
+#         # Determine which type of marker it is and set the appropriate end marker
+#         if re.match(MQ_START, marker, re.IGNORECASE):
+#             end_regex = re.compile(MQ_END, re.IGNORECASE)
+#             key = "main_question"
+#         elif re.match(Q_START, marker, re.IGNORECASE):
+#             end_regex = re.compile(Q_END, re.IGNORECASE)
+#             key = "question"
+#         elif re.match(A_START, marker, re.IGNORECASE):
+#             end_regex = re.compile(A_END, re.IGNORECASE)
+#             key = "answer"
+#         else:
+#             # Should not happen
+#             idx = start_idx
+#             continue
+
+#         # Try to find the ending marker for this section
+#         end_match = end_regex.search(text, start_idx)
+#         next_start = find_next_start(text, start_idx)
+#         if end_match and end_match.start() < next_start:
+#             # Ending marker found before next start marker
+#             content_end = end_match.start()
+#             next_idx = end_match.end()
+#         else:
+#             # No ending marker, or next start marker comes first
+#             content_end = next_start
+#             next_idx = next_start
+
+#         content = text[start_idx:content_end].strip()
+
+#         # If starting a new main_question or question, flush current if needed
+#         if key == "main_question":
+#             if current:
+#                 result.append(current)
+#                 current = {}
+#             current[key] = content
+#         elif key == "question":
+#             if current and "question" in current:
+#                 result.append(current)
+#                 current = {}
+#             current[key] = content
+#         elif key == "answer":
+#             current[key] = content
+#             result.append(current)
+#             current = {}
+
+#         idx = next_idx
+
+#     if current:
+#         result.append(current)
+
+#     return result
+
+
+import re
+
 def extract_all_text_sequentially(text):
     """
-    Extracts main questions, questions, and answers from text using regex.
-    If an ending marker is missing, the function will break to a new question/answer
-    whenever it finds the beginning marker of the next question/answer.
-    If the ending marker is present, it will use it as the boundary.
+    Fault-tolerant extraction of main questions, questions, and answers.
+    - Handles misplaced/missing markers.
+    - Merges trailing text after $$END/$$HALT if it looks like continuation.
     """
+
     if not isinstance(text, str):
         print(f"Warning: extract_all_text_sequentially received non-string input ({type(text)})")
         return []
 
-    # Define start and end markers for each type
+    # Define markers
     MQ_START = r'[\$S](?:START|SMART)'
-    MQ_END = r'[\$S]STOP'
-    Q_START = r'[\$S]BEGIN'
-    Q_END = r'[\$S]{2}END'
-    A_START = r'[\$S]INIT'
-    A_END = r'[\$S]{2}HALT'
+    MQ_END   = r'[\$S]STOP'
+    Q_START  = r'[\$S]BEGIN'
+    Q_END    = r'[\$S]{2}END'
+    A_START  = r'[\$S]INIT'
+    A_END    = r'[\$S]{2}HALT'
 
-    # Build a regex that matches any of the start markers, capturing the marker and its position
     start_pattern = re.compile(
         rf'({MQ_START})|({Q_START})|({A_START})',
         re.IGNORECASE
     )
 
-    # Helper to find the next start marker after a given index
     def find_next_start(text, start_idx):
         match = start_pattern.search(text, start_idx)
         return match.start() if match else len(text)
 
     result = []
     current = {}
-
     idx = 0
     text_len = len(text)
+
     while idx < text_len:
-        # Search for the next start marker
         match = start_pattern.search(text, idx)
         if not match:
             break
         marker = match.group(0)
         start_idx = match.end()
 
-        # Determine which type of marker it is and set the appropriate end marker
         if re.match(MQ_START, marker, re.IGNORECASE):
             end_regex = re.compile(MQ_END, re.IGNORECASE)
             key = "main_question"
@@ -116,25 +210,27 @@ def extract_all_text_sequentially(text):
             end_regex = re.compile(A_END, re.IGNORECASE)
             key = "answer"
         else:
-            # Should not happen
             idx = start_idx
             continue
 
-        # Try to find the ending marker for this section
         end_match = end_regex.search(text, start_idx)
         next_start = find_next_start(text, start_idx)
         if end_match and end_match.start() < next_start:
-            # Ending marker found before next start marker
             content_end = end_match.start()
             next_idx = end_match.end()
         else:
-            # No ending marker, or next start marker comes first
             content_end = next_start
             next_idx = next_start
 
         content = text[start_idx:content_end].strip()
 
-        # If starting a new main_question or question, flush current if needed
+        # 🔧 Heuristic fix: if content is too short, merge with trailing text
+        if key == "question" and len(content) < 5:
+            trailing_end = next_start
+            trailing_text = text[content_end:trailing_end].strip()
+            if trailing_text and not trailing_text.startswith("$"):
+                content = (content + " " + trailing_text).strip()
+
         if key == "main_question":
             if current:
                 result.append(current)

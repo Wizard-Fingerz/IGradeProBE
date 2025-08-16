@@ -41,6 +41,11 @@ class ExamResult(models.Model):
     @property
     def examiner_answer(self):
         return self.question.examiner_answer
+
+    
+    @property
+    def exam_comprehension(self):
+        return self.question.comprehension
     
     def __str__(self):
         return f"{self.student.candidate_number}'s answer to {self.question}"
