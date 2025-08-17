@@ -59,25 +59,73 @@ class PredictionService:
 
         return overlap_count, precision, recall, f1
 
-    def refine_with_llm(self, student_answer, examiner_answer, comprehension, raw_score, max_score):
+
+    def list_similarity(self, student_answer, examiner_answer, comprehension):
+        """
+        Handle list-style questions (e.g., 'List 3 causes of...').
+        Returns a similarity score [0,1].
+        """
+        # Split examiner into list points
+        points = [p.strip(" -•") for p in examiner_answer.split("\n") if p.strip()]
+        if len(points) == 1:
+            points = [p.strip() for p in examiner_answer.split(" - ") if p.strip()]
+
+        # If not a list, just fall back to normal similarity
+        if len(points) <= 1:
+            return self.calculate_combined_similarity(student_answer, examiner_answer, comprehension)
+
+        student_items = [s.strip() for s in student_answer.split("\n") if s.strip()]
+        if len(student_items) == 1:  
+            # fallback: space-separated
+            student_items = [s.strip() for s in student_answer.split() if s.strip()]
+
+        matches = 0
+        matched_exam_points = set()
+
+        for s_item in student_items:
+            # fuzzy match student item against examiner points
+            best_match = process.extractOne(s_item, points, scorer=fuzz.token_sort_ratio)
+            if best_match and best_match[1] >= 70:  # threshold
+                exam_item = best_match[0]
+                if exam_item not in matched_exam_points:
+                    matched_exam_points.add(exam_item)
+                    matches += 1
+
+        coverage_ratio = matches / len(points)
+
+        # Blend fuzzy match coverage with semantic similarity
+        semantic_sim = self.calculate_combined_similarity(student_answer, examiner_answer, comprehension)
+        list_similarity_score = (0.6 * coverage_ratio) + (0.4 * semantic_sim)
+
+        return min(max(list_similarity_score, 0.0), 1.0)
+
+
+
+
+
+    def refine_with_llm(self, question, student_answer, examiner_answer, comprehension, raw_score, max_score):
         """Optional: LLM reasoning refinement"""
         prompt = f"""
         You are grading a student answer.
-        Comprehension: {comprehension}
+        Comprehension Passage: {comprehension}
+        Question: {question}
         Examiner Answer: {examiner_answer}
         Student Answer: {student_answer}
         Raw Score (from embeddings + keyword overlap): {raw_score:.2f} / {max_score}
 
-        Task: Adjust the score if necessary, considering partial credit.
+        Task: Adjust the score if necessary, considering:
+        - relevance to the question,
+        - semantic similarity to the examiner answer,
+        - partial credit for partially correct or incomplete answers.
+
         Return ONLY a number between 0 and {max_score}.
         """
         response = llm(prompt, max_new_tokens=50, do_sample=False)
         try:
             refined_score = float([t for t in response[0]['generated_text'].split() if t.replace('.', '', 1).isdigit()][0])
-            return min(max(refined_score, 0), max_score)  # clamp
+            return min(max(refined_score, 0), max_score)  # clamp to [0, max_score]
         except:
             return raw_score  # fallback if parsing fails
-
 
     def calculate_combined_similarity(self, student_answer, examiner_answer, comprehension, weights=None):
         if not student_answer or not examiner_answer or not comprehension:
@@ -127,11 +175,14 @@ class PredictionService:
         # Step 1: Keyword overlap
         overlap_count, precision, recall, f1 = self.keyword_overlap(student_answer, examiner_answer)
 
-        # Step 2: Semantic similarity (examiner + comprehension context)
-        weights = {'examiner': 0.3, 'comprehension': 0.7}
-        semantic_similarity = self.calculate_combined_similarity(
-            student_answer, examiner_answer, comprehension, weights
-        )
+        # Step 2: Decide similarity function
+        if "\n" in examiner_answer or " - " in examiner_answer:
+            semantic_similarity = self.list_similarity(student_answer, examiner_answer, comprehension)
+        else:
+            weights = {'examiner': 0.3, 'comprehension': 0.7}
+            semantic_similarity = self.calculate_combined_similarity(
+                student_answer, examiner_answer, comprehension, weights
+            )
 
         adjusted_similarity = (semantic_similarity * 0.8) + (f1 * 0.2)
 
@@ -151,9 +202,10 @@ class PredictionService:
 
         # Step 7: Optional LLM refinement
         llm_score = self.refine_with_llm(
-            student_answer, examiner_answer, comprehension,
+            question, student_answer, examiner_answer, comprehension,
             model_score, question_score
         )
+
 
         # Step 8: Decide final score
         # Rule: trust model if it's already high quality (close to max), 
