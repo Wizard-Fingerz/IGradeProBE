@@ -6,6 +6,8 @@ from nltk.corpus import stopwords
 from nltk.stem import WordNetLemmatizer
 import warnings
 from sentence_transformers import SentenceTransformer, util
+from fuzzywuzzy import fuzz, process
+
 
 # Load embedding model once
 embedder = SentenceTransformer('sentence-transformers/all-mpnet-base-v2')
