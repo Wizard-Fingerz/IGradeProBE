@@ -1,156 +1,3 @@
-# import joblib
-# import numpy as np
-# import pandas as pd
-# from nltk.tokenize import word_tokenize
-# from nltk.corpus import stopwords
-# from nltk.stem import WordNetLemmatizer
-# import warnings
-
-# warnings.simplefilter("ignore")
-# import joblib
-# import spacy
-# from nltk.tokenize import word_tokenize
-# from nltk.corpus import stopwords
-# from sklearn.metrics.pairwise import cosine_similarity
-
-# # Load spaCy's medium-sized English language model
-# nlp = spacy.load("en_core_web_md")
-
-# class PredictionService:
-#     def __init__(self):
-#         self.model = self.load_model()
-
-    
-#     def load_model(self):
-#         model_path = './new_dump/dt_model_new.joblib'
-
-#         try:
-#             model = joblib.load(model_path)
-#             print('I was succesful')
-#             return model
-#         except Exception as e:
-#             print(f"Error loading the model: {e}")
-#             return None
-
-
-#     def preprocess_text(self, text):
-#         # Convert text to lowercase
-#         text = text.lower()
-#         text = ''.join([char for char in text if char.isalnum() or char.isspace()])
-#         tokens = word_tokenize(text)
-#         stop_words = set(stopwords.words('english'))
-#         tokens = [word for word in tokens if word not in stop_words]
-#         lemmatizer = WordNetLemmatizer()
-#         tokens = [lemmatizer.lemmatize(word) for word in tokens]
-#         return ' '.join(tokens)
-
-#     # def calculate_combined_similarity(self, student_answer, examiner_answer, comprehension, weights):
-#     #     # Check if any of the input text strings are empty
-#     #     if not student_answer or not examiner_answer or not comprehension:
-#     #         return 0.0  # Return zero similarity if any input text string is empty
-        
-#     #     # Preprocess the text
-#     #     preprocessed_student_answer = self.preprocess_text(student_answer)
-#     #     preprocessed_examiner_answer = self.preprocess_text(examiner_answer)
-#     #     preprocessed_comprehension = self.preprocess_text(comprehension)
-        
-#     #     # Calculate similarity between student answer and examiner answer
-#     #     similarity_examiner = nlp(preprocessed_student_answer).similarity(nlp(preprocessed_examiner_answer))
-        
-#     #     # Calculate similarity between student answer and comprehension
-#     #     similarity_comprehension = nlp(preprocessed_student_answer).similarity(nlp(preprocessed_comprehension))
-
-        
-#     #     # Combine similarity scores using weights
-#     #     combined_similarity = (weights['examiner'] * similarity_examiner) + (weights['comprehension'] * similarity_comprehension)
-
-#     #     print(combined_similarity)
-        
-#     #     return combined_similarity
-
-
-#     def calculate_combined_similarity(self, student_answer, examiner_answer, comprehension, weights=None):
-#         # Check if any of the input text strings are empty
-#         if not student_answer or not examiner_answer or not comprehension:
-#             return 0.0  # Return zero similarity if any input text string is empty
-        
-#         # Preprocess the text
-#         preprocessed_student_answer = self.preprocess_text(student_answer)
-#         preprocessed_examiner_answer = self.preprocess_text(examiner_answer)
-#         preprocessed_comprehension = self.preprocess_text(comprehension)
-        
-#         # Calculate similarity between student answer and examiner answer
-#         similarity_examiner = nlp(preprocessed_student_answer).similarity(nlp(preprocessed_examiner_answer))
-        
-#         # Calculate similarity between student answer and comprehension
-#         similarity_comprehension = nlp(preprocessed_student_answer).similarity(nlp(preprocessed_comprehension))
-        
-#         # If no weights provided, determine them dynamically
-#         if weights is None:
-#             base_examiner = 0.2
-#             base_comprehension = 0.8
-#             diff = similarity_examiner - similarity_comprehension
-            
-#             if diff > 0:  # Examiner similarity is higher
-#                 shift = min(diff * 0.5, 0.5)  # limit shift
-#                 weights = {
-#                     'examiner': min(base_examiner + shift, 0.7),
-#                     'comprehension': max(base_comprehension - shift, 0.3)
-#                 }
-#             else:  # Comprehension similarity is higher
-#                 shift = min(abs(diff) * 0.5, 0.5)
-#                 weights = {
-#                     'examiner': max(base_examiner - shift, 0.3),
-#                     'comprehension': min(base_comprehension + shift, 0.7)
-#                 }
-
-#         # Combine similarity scores using weights
-#         combined_similarity = (weights['examiner'] * similarity_examiner) + \
-#                             (weights['comprehension'] * similarity_comprehension)
-
-#         print(f"Examiner sim: {similarity_examiner:.3f}, Comprehension sim: {similarity_comprehension:.3f}, "
-#             f"Weights: {weights}, Combined: {combined_similarity:.3f}")
-        
-#         return combined_similarity
-
-
-
-
-#     def predict(self, question_id, comprehension, question, examiner_answer, student_answer, question_score, suppress_warning=True):
-#         # Specify weights for examiner answer and comprehension
-#         # weights = {'examiner': 0.1, 'comprehension': 0.9}
-#         weights = {'examiner': 0.05, 'comprehension': 0.95}
-        
-#         # Calculate semantic similarity
-#         semantic_similarity = self.calculate_combined_similarity(student_answer, examiner_answer, comprehension, weights)
-        
-#         # Assuming you have loaded your model and preprocessed the text
-        
-#         # Make prediction using your machine learning model
-#         # Concatenate the semantic similarity and question score as features
-#         features = np.array([[semantic_similarity, question_score]])  # Reshape the input to a 2D array
-#         predicted_student_score = self.model.predict(features)
-        
-#         # Ensure the predicted score does not exceed the question score
-#         predicted_student_score = min(predicted_student_score, question_score)
-        
-#         return predicted_student_score
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 import joblib
 import numpy as np
 import spacy
@@ -274,34 +121,6 @@ class PredictionService:
         return combined_similarity
 
 
-    # def predict(self, question_id, comprehension, question, examiner_answer, student_answer, question_score):
-    #     """Hybrid scoring system"""
-    #     # Step 1: Keyword overlap
-    #     overlap_count, precision, recall, f1 = self.keyword_overlap(student_answer, examiner_answer)
-
-    #     # Step 2: Semantic similarity
-    #     weights = {'examiner': 0.3, 'comprehension': 0.7}  # Adjust per question type if needed
-    #     semantic_similarity = self.calculate_combined_similarity(student_answer, examiner_answer, comprehension, weights)
-
-    #     # Step 3: Build feature vector for model
-    #     features = np.array([[semantic_similarity, f1, question_score]])
-    #     predicted_score = self.model.predict(features)
-
-    #     # Step 4: Rule-based override
-    #     if overlap_count >= question_score:
-    #         return question_score  # Full marks if student covered all required items
-
-    #     # Step 5: Clip score
-    #     # predicted_score = float(min(predicted_score, question_score))
-    #     # return predicted_score
-
-    #     predicted_score = float(min(predicted_score, question_score))
-
-    #     # Optional LLM refinement
-    #     predicted_score = self.refine_with_llm(student_answer, examiner_answer, comprehension, predicted_score, question_score)
-
-    #     return predicted_score
-
 
     def predict(self, question_id, comprehension, question, examiner_answer, student_answer, question_score):
         """Hybrid scoring system with 2-feature input"""
@@ -314,24 +133,37 @@ class PredictionService:
             student_answer, examiner_answer, comprehension, weights
         )
 
+        adjusted_similarity = (semantic_similarity * 0.8) + (f1 * 0.2)
+
+
         # Step 3: Build feature vector (ONLY 2 features)
-        features = np.array([[semantic_similarity, f1]])
+        features = np.array([[adjusted_similarity, question_score]])
 
         # Step 4: Model prediction
-        predicted_score = self.model.predict(features)[0]
+        model_score = float(self.model.predict(features)[0])
 
-        # Step 5: Rule-based override
+        # Step 5: Rule-based override (full marks if coverage)
         if overlap_count >= question_score:
-            return question_score  # Full marks if student covered all required items
+            return question_score  
 
-        # Step 6: Clip score
-        predicted_score = float(min(predicted_score, question_score))
+        # Step 6: Clip model score
+        model_score = min(model_score, question_score)
 
         # Step 7: Optional LLM refinement
-        predicted_score = self.refine_with_llm(
+        llm_score = self.refine_with_llm(
             student_answer, examiner_answer, comprehension,
-            predicted_score, question_score
+            model_score, question_score
         )
 
-        return predicted_score
+        # Step 8: Decide final score
+        # Rule: trust model if it's already high quality (close to max), 
+        # otherwise let LLM improve it if valid
+        if abs(model_score - question_score) <= 0.5:
+            return model_score  # model already confident
+        else:
+            # Choose whichever score is closer to ground-truth constraints
+            # e.g., within [0, question_score] and consistent with overlap
+            if llm_score is not None:
+                return min(max(llm_score, 0), question_score)
+            return model_score
 
