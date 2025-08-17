@@ -24,7 +24,7 @@ from app.test_ocr_main.main import extract_text_with_test_ocr
 from .models import StudentScript, ScriptPage
 from rest_framework.decorators import action
 from .serializers import StudentScriptSerializer
-from .google_ocr_modified import detect_document_modified, extract_all_text_between_as_ae, extract_all_text_sequentially, find_matching_question
+from .google_ocr_modified import clean_final_output, detect_document_modified, extract_all_text_between_as_ae, extract_all_text_sequentially, find_matching_question
 
 
 class StudentScriptViewSet(viewsets.ModelViewSet):
@@ -270,7 +270,7 @@ class BulkUploadScriptView(APIView):
                             default_storage.path(image_path), settings.GOOGLE_APPLICATION_CREDENTIALS
                         )
 
-                        print('extracted text', extracted_text)
+                        # print('extracted text', extracted_text)
 
                         combined_text += "\n" + extracted_text
 
@@ -284,6 +284,8 @@ class BulkUploadScriptView(APIView):
 
                     # Now grade
                     extracted_text_from_regex = extract_all_text_sequentially(combined_text)
+
+                    print('regex output', extracted_text_from_regex)
                     for qa in extracted_text_from_regex:
                         question_text = qa.get("question")
                         student_answer = qa.get("answer")

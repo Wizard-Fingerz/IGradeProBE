@@ -158,13 +158,63 @@ import re
 #     return result
 
 
+
 import re
+import re
+
+def clean_final_output(data):
+    """
+    Cleans up question/answer dicts by removing regex tags and exam marks.
+    """
+    cleaned = []
+    for item in data:
+        q = item.get("question", "")
+        a = item.get("answer", "")
+
+        # Remove all parsing regex leftovers
+        q = re.sub(r'(\$\$END|\$INIT|\$BEGIN|\$STOP|\$HALT)', '', q)
+        a = re.sub(r'(\$\$END|\$INIT|\$BEGIN|\$STOP|\$HALT)', '', a)
+
+        # Remove question numbering artifacts like "11:" at start
+        q = re.sub(r'^\s*\d+\s*[:.)-]?\s*', '', q)
+        a = re.sub(r'^\s*\d+\s*[:.)-]?\s*', '', a)
+
+        # Remove marks like [1 mark], (2 marks), [15 marks] etc.
+        q = re.sub(r'\[\s*\d+\s*marks?\s*\]', '', q, flags=re.IGNORECASE)
+        q = re.sub(r'\(\s*\d+\s*marks?\s*\)', '', q, flags=re.IGNORECASE)
+        a = re.sub(r'\[\s*\d+\s*marks?\s*\]', '', a, flags=re.IGNORECASE)
+        a = re.sub(r'\(\s*\d+\s*marks?\s*\)', '', a, flags=re.IGNORECASE)
+
+        # Remove extra spaces & normalize newlines
+        q = re.sub(r'\s+', ' ', q).strip()
+        a = re.sub(r'\s+', ' ', a).strip()
+
+        cleaned.append({"question": q, "answer": a})
+    return cleaned
+
+
+
+def clean_text(text: str) -> str:
+    if not text:
+        return text
+    # remove marks like [1 mark], [2 marks], etc
+    text = re.sub(r"\[\d+\s*marks?\]", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"\[\d+\s*mark\]", "", text, flags=re.IGNORECASE)
+
+    # remove leftover $$BEGIN, $$END, $INIT, $HALT, etc
+    text = re.sub(r"\$\$?[A-Z]+\b", "", text)
+
+    # strip extra spaces & newlines
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
 
 def extract_all_text_sequentially(text):
     """
-    Fault-tolerant extraction of main questions, questions, and answers.
-    - Handles misplaced/missing markers.
-    - Merges trailing text after $$END/$$HALT if it looks like continuation.
+    Improved fault-tolerant extraction:
+    - Supports questions spilling after $$END (e.g., "11: Give four reasons ...").
+    - Uses markers when available.
+    - Recovers missing questions by scanning unmapped text for question-like phrases.
+    - Ensures every answer has a mapped question (or a placeholder).
     """
 
     if not isinstance(text, str):
@@ -192,6 +242,14 @@ def extract_all_text_sequentially(text):
     current = {}
     idx = 0
     text_len = len(text)
+
+    mapped_ranges = []  # track extracted regions for recovery later
+
+    # regex to detect question-like text
+    question_like = re.compile(
+        r'(^\d+[:.)])|(who|what|when|where|why|how|explain|describe|define|list|state|give)',
+        re.IGNORECASE
+    )
 
     while idx < text_len:
         match = start_pattern.search(text, idx)
@@ -224,12 +282,41 @@ def extract_all_text_sequentially(text):
 
         content = text[start_idx:content_end].strip()
 
-        # 🔧 Heuristic fix: if content is too short, merge with trailing text
+        # Heuristic fix for tiny fragments inside question markers
         if key == "question" and len(content) < 5:
             trailing_end = next_start
             trailing_text = text[content_end:trailing_end].strip()
             if trailing_text and not trailing_text.startswith("$"):
                 content = (content + " " + trailing_text).strip()
+
+
+        # 🔍 NEW: Capture question text immediately after $$END if it looks like a question
+        if key == "question":
+            lookahead_text = text[content_end:next_idx].strip()
+            if lookahead_text and question_like.search(lookahead_text):
+                content = (content + " " + lookahead_text).strip()
+
+        if key == "question":
+            # Detect placeholder like "(a)", "(α)", "a)", etc.
+            placeholder_like = re.match(r'^\(?[a-zα-ω]\)?$', content.strip(), re.IGNORECASE)
+            is_too_short = len(content.strip()) < 5 and not question_like.search(content)
+
+            if placeholder_like or is_too_short:
+                # Look ahead after $$END for real question text
+                lookahead_text = text[content_end:next_idx].strip()
+                if lookahead_text and question_like.search(lookahead_text):
+                    content = lookahead_text
+                else:
+                    content = "UNKNOWN_QUESTION"
+            else:
+                # Normal case: maybe extend with nearby text
+                lookahead_text = text[content_end:next_idx].strip()
+                if lookahead_text and question_like.search(lookahead_text):
+                    content = (content + " " + lookahead_text).strip()
+
+
+        # Save extracted range
+        mapped_ranges.append((start_idx, content_end))
 
         if key == "main_question":
             if current:
@@ -241,17 +328,76 @@ def extract_all_text_sequentially(text):
                 result.append(current)
                 current = {}
             current[key] = content
+        # elif key == "answer":
+        #     current[key] = content
+        #     result.append(current)
+        #     current = {}
+
         elif key == "answer":
-            current[key] = content
+            # Detect mis-nested question inside the answer block
+            question_match = re.search(r'(.+?\?\s*|\bName the\b.*?\.\s*)\$\$END', content, re.IGNORECASE | re.DOTALL)
+            if question_match:
+                # Split into question + real answer
+                q_text = question_match.group(1).replace("$$END", "").strip()
+                a_text = content[question_match.end():].strip()
+                current["question"] = q_text
+                current["answer"] = a_text
+            else:
+                current["answer"] = content
             result.append(current)
             current = {}
+
 
         idx = next_idx
 
     if current:
         result.append(current)
 
-    return result
+    # -----------------------------------------------------
+    # 🔍 Recovery step: find answers without questions
+    # -----------------------------------------------------
+    unmapped_regions = []
+    last_end = 0
+    for start, end in sorted(mapped_ranges):
+        if last_end < start:
+            unmapped_regions.append(text[last_end:start].strip())
+        last_end = end
+    if last_end < len(text):
+        unmapped_regions.append(text[last_end:].strip())
+
+    recovered_questions = []
+    for region in unmapped_regions:
+        if question_like.search(region):
+            recovered_questions.append(region)
+
+    # Attach recovered questions to dangling answers
+    final_result = []
+    q_idx = 0
+    for item in result:
+        if "answer" in item and "question" not in item:
+            if q_idx < len(recovered_questions):
+                item["question"] = recovered_questions[q_idx]
+                q_idx += 1
+            else:
+                item["question"] = "UNKNOWN_QUESTION"
+
+        elif "question" in item and item["question"] == "UNKNOWN_QUESTION":
+            if q_idx < len(recovered_questions):
+                item["question"] = recovered_questions[q_idx]
+                q_idx += 1
+
+        # 🔹 Apply cleanup here
+        item["question"] = clean_text(item.get("question", ""))
+        item["answer"]   = clean_text(item.get("answer", ""))
+
+        final_result.append(item)
+
+        # final_result.append(item)
+
+        # cleaned_result = final_result.append(item)
+
+    return final_result
+
 
 
 def extract_all_text_between_as_ae(text):
