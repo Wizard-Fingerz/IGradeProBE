@@ -27,6 +27,10 @@ from transformers import pipeline
 llm = pipeline("text-generation", model="google/flan-t5-large")
 
 
+
+ROMAN_LABEL_RE = re.compile(r'\b([IVXLCDM]+)\s*:\s*([^\n\r]+?)(?=(?:\b[IVXLCDM]+\s*:)|$)', re.IGNORECASE)
+
+
 class PredictionService:
     def __init__(self):
         self.model = self.load_model()
@@ -64,6 +68,143 @@ class PredictionService:
         f1 = 2 * (precision * recall) / (precision + recall + 1e-8)
 
         return overlap_count, precision, recall, f1
+
+    def _first_percent_number(self, text: str):
+        m = re.search(r'([-+]?\d+(?:\.\d+)?)\s*%?', text)
+        return float(m.group(1)) if m else None
+
+    def _clean_text(self, s: str):
+        return re.sub(r'[\s\.,;:()\[\]-]+', ' ', s).strip().lower()
+
+    def _extract_label_map(self, text: str, expected_labels=None):
+        """
+        Extract {label -> value_text} from 'III: ... IV: ...' style text.
+        If expected_labels is given, only keep those labels.
+        """
+        mapping = {}
+        if not isinstance(text, str):
+            return mapping
+
+        for lab, val in ROMAN_LABEL_RE.findall(text):
+            lab_norm = lab.upper()
+            if expected_labels and lab_norm not in expected_labels:
+                continue
+            mapping[lab_norm] = val.strip()
+
+        # If nothing matched but we know which labels we expect, try a loose fallback:
+        # split by spaces and try to assign first values following each label token.
+        if not mapping and expected_labels:
+            tokens = text.split()
+            labs = [t.rstrip(':').upper() for t in tokens if t.rstrip(':').upper() in expected_labels]
+            for i, tok in enumerate(tokens):
+                key = tok.rstrip(':').upper()
+                if key in expected_labels and key not in mapping:
+                    # grab the slice after the label up to next known label
+                    j = i + 1
+                    chunk = []
+                    while j < len(tokens) and tokens[j].rstrip(':').upper() not in expected_labels:
+                        chunk.append(tokens[j])
+                        j += 1
+                    if chunk:
+                        mapping[key] = ' '.join(chunk).strip()
+        return mapping
+
+    def _is_labelled_mapping_question(self, question: str, examiner_answer: str):
+        """
+        True if the task mentions 'labelled' AND it does NOT look like a list question.
+        We consider it a labelled mapping only if:
+        - examiner answer contains ROMAN_LABEL_RE OR
+        - question contains 'labelled' AND does not contain numeric count.
+        """
+        question_lower = question.lower() if isinstance(question, str) else ""
+        
+        # Detect if question expects a list (name X, list X, give X, mention X, state X)
+        list_patterns = [
+            r"\bname\s+(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten)\b",
+            r"\blist\s+(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten)\b",
+            r"\bgive\s+(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten)\b",
+            r"\bmention\s+(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten)\b",
+            r"\bstate\s+(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten)\b"
+        ]
+        is_list = any(re.search(p, question_lower) for p in list_patterns)
+
+        # Labelled mapping detection
+        has_labelled = "labelled" in question_lower
+        has_label_pattern = isinstance(examiner_answer, str) and ROMAN_LABEL_RE.search(examiner_answer)
+
+        # It's a labelled mapping only if:
+        # - examiner answer contains labels OR
+        # - question mentions labelled AND it is NOT a list
+        return has_label_pattern or (has_labelled and not is_list)
+
+
+    def _label_map_similarity(self, student_text: str, examiner_text: str, comprehension_text: str = None,
+                            percent_tolerance: float = 0.02,  # ±2% absolute tolerance for numeric (%)
+                            text_fuzzy_thresh: int = 85,      # fuzzy ratio threshold
+                            embed_thresh: float = 0.80) -> float:
+        """
+        Compare student vs examiner by labels.
+        If values look numeric/percent, compare numerically (within tolerance).
+        Otherwise compare text (fuzzy first, then embeddings).
+        Return a single similarity in [0,1] = (#labels correct) / (#labels expected).
+        """
+        # Expected mapping from examiner
+        exam_map = self._extract_label_map(examiner_text)
+        if not exam_map:
+            return 0.0
+        labels = list(exam_map.keys())
+
+        # Optional alternative values from comprehension (same labels)
+        comp_map = self._extract_label_map(comprehension_text or "", expected_labels=set(labels)) if comprehension_text else {}
+
+        # Student mapping (STRICT by label)
+        stu_map = self._extract_label_map(student_text, expected_labels=set(labels))
+
+        # Helper: decide if a label's values are numeric
+        def is_numeric_value(s):
+            return self._first_percent_number(s) is not None
+
+        correct = 0
+        for lab in labels:
+            expected_val = exam_map.get(lab, "")
+            student_val  = stu_map.get(lab, None)
+            if student_val is None:
+                # No value provided for this label -> incorrect
+                continue
+
+            # NUMERIC path (percent or plain number)
+            exp_num = self._first_percent_number(expected_val)
+            stu_num = self._first_percent_number(student_val)
+            if exp_num is not None and stu_num is not None:
+                # absolute difference tolerance, e.g., |52 - 45| <= 2? -> correct
+                if abs(stu_num - exp_num) <= (percent_tolerance * 100.0):
+                    correct += 1
+                continue
+
+            # TEXT path
+            exp_texts = {self._clean_text(expected_val)}
+            # allow an alternative from comprehension for this same label
+            if lab in comp_map:
+                exp_texts.add(self._clean_text(comp_map[lab]))
+
+            stu_text = self._clean_text(student_val)
+
+            # fuzzy first
+            if any(fuzz.ratio(stu_text, et) >= text_fuzzy_thresh for et in exp_texts):
+                correct += 1
+                continue
+
+            # embeddings as a backstop (only for non-trivial strings)
+            if stu_text and any(
+                util.cos_sim(
+                    embedder.encode(stu_text, convert_to_tensor=True),
+                    embedder.encode(et,        convert_to_tensor=True)
+                ).item() >= embed_thresh
+                for et in exp_texts
+            ):
+                correct += 1
+
+        return correct / max(len(labels), 1)
 
     # def list_similarity(self, student_items, examiner_items, comprehension_items=None):
     #     """
@@ -273,10 +414,18 @@ class PredictionService:
         # Step 1: Keyword overlap
         overlap_count, precision, recall, f1 = self.keyword_overlap(student_answer, examiner_answer)
 
+
         # Step 2: Decide similarity function
-        if "\n" in examiner_answer or " - " in examiner_answer:
+        if self._is_labelled_mapping_question(question, examiner_answer):
+            # label→value grading (strict by label)
+            semantic_similarity = self._label_map_similarity(
+                student_answer, examiner_answer, comprehension
+            )
+        elif "\n" in examiner_answer or " - " in examiner_answer:
+            # list-type grading
             semantic_similarity = self.list_similarity(student_answer, examiner_answer, comprehension)
         else:
+            # normal text similarity
             weights = {'examiner': 0.1, 'comprehension': 0.9}
             semantic_similarity = self.calculate_combined_similarity(
                 student_answer, examiner_answer, comprehension, weights
