@@ -10,6 +10,8 @@ from sentence_transformers import SentenceTransformer, util
 from rapidfuzz import fuzz, process
 import re
 
+from app.ocr.prediction2 import QuestionTypePredictor
+
 # Load embedding model once
 embedder = SentenceTransformer('sentence-transformers/all-mpnet-base-v2')
 
@@ -34,6 +36,8 @@ ROMAN_LABEL_RE = re.compile(r'\b([IVXLCDM]+)\s*:\s*([^\n\r]+?)(?=(?:\b[IVXLCDM]+
 class PredictionService:
     def __init__(self):
         self.model = self.load_model()
+        self.qtype_predictor = QuestionTypePredictor()
+
 
     def load_model(self):
         model_path = './new_dump/dt_model_new.joblib'
@@ -109,141 +113,60 @@ class PredictionService:
                         mapping[key] = ' '.join(chunk).strip()
         return mapping
 
-    def _is_labelled_mapping_question(self, question: str, examiner_answer: str):
+    # def _label_map_similarity(self, student_text: str, examiner_text: str, comprehension_text: str = None,
+    #                         percent_tolerance: float = 0.0,  # no tolerance
+    #                         text_fuzzy_thresh: int = 100,    # exact match only
+    #                         embed_thresh: float = 1.0) -> float:
+    #     """
+    #     Strict Label → Value comparison:
+    #     - Only exact matches count (fuzzy ratio = 100)
+    #     - Percent tolerance = 0
+    #     """
+    #     exam_map = self._extract_label_map(examiner_text)
+    #     if not exam_map:
+    #         return 0.0
+    #     labels = list(exam_map.keys())
+
+    #     stu_map = self._extract_label_map(student_text, expected_labels=set(labels))
+
+    #     correct = 0
+    #     for lab in labels:
+    #         expected_val = self._clean_text(exam_map[lab])
+    #         student_val  = stu_map.get(lab, None)
+    #         if student_val is None:
+    #             continue
+
+    #         student_val = self._clean_text(student_val)
+
+    #         # Only exact match counts
+    #         if expected_val == student_val:
+    #             correct += 1
+
+    #     return correct / max(len(labels), 1)
+
+    def _label_map_similarity(self, student_text: str, examiner_text: str) -> float:
         """
-        True if the task is a labelled mapping question.
-
-        Conditions for labelled mapping:
-        1. Examiner answer contains ROMAN_LABEL_RE OR
-        2. Question contains 'labelled' AND
-        - it does NOT contain list patterns with numbers (digits or words)
+        Strict comparison for Label_to_Value:
+        - Only exact matches count
+        - Fractional score: correct_labels / total_labels
         """
-
-        question_lower = question.lower() if isinstance(question, str) else ""
-
-        # --- Detect list pattern with numbers (digits or words) ---
-        number_words = r"(?:one|two|three|four|five|six|seven|eight|nine|ten)"
-        list_patterns = [
-            rf"\bname\s+(?:\d+|{number_words})\b",
-            rf"\blist\s+(?:\d+|{number_words})\b",
-            rf"\bgive\s+(?:\d+|{number_words})\b",
-            rf"\bmention\s+(?:\d+|{number_words})\b",
-            rf"\bstate\s+(?:\d+|{number_words})\b"
-        ]
-        is_list_with_number = any(re.search(p, question_lower) for p in list_patterns)
-
-        # --- Detect labelled mapping ---
-        has_labelled = "labelled" in question_lower
-        has_label_pattern = isinstance(examiner_answer, str) and ROMAN_LABEL_RE.search(examiner_answer)
-
-        # Labelled mapping: either answer has labels OR question says 'labelled' without a numeric list
-        return has_label_pattern or (has_labelled and not is_list_with_number)
-
-
-    def _label_map_similarity(self, student_text: str, examiner_text: str, comprehension_text: str = None,
-                            percent_tolerance: float = 0.02,  # ±2% absolute tolerance for numeric (%)
-                            text_fuzzy_thresh: int = 85,      # fuzzy ratio threshold
-                            embed_thresh: float = 0.80) -> float:
-        """
-        Compare student vs examiner by labels.
-        If values look numeric/percent, compare numerically (within tolerance).
-        Otherwise compare text (fuzzy first, then embeddings).
-        Return a single similarity in [0,1] = (#labels correct) / (#labels expected).
-        """
-        # Expected mapping from examiner
         exam_map = self._extract_label_map(examiner_text)
         if not exam_map:
             return 0.0
-        labels = list(exam_map.keys())
-
-        # Optional alternative values from comprehension (same labels)
-        comp_map = self._extract_label_map(comprehension_text or "", expected_labels=set(labels)) if comprehension_text else {}
-
-        # Student mapping (STRICT by label)
-        stu_map = self._extract_label_map(student_text, expected_labels=set(labels))
-
-        # Helper: decide if a label's values are numeric
-        def is_numeric_value(s):
-            return self._first_percent_number(s) is not None
+        
+        stu_map = self._extract_label_map(student_text, expected_labels=set(exam_map.keys()))
 
         correct = 0
-        for lab in labels:
-            expected_val = exam_map.get(lab, "")
-            student_val  = stu_map.get(lab, None)
+        for label, expected_val in exam_map.items():
+            expected_val_clean = expected_val.strip().lower()
+            student_val = stu_map.get(label, None)
             if student_val is None:
-                # No value provided for this label -> incorrect
                 continue
-
-            # NUMERIC path (percent or plain number)
-            exp_num = self._first_percent_number(expected_val)
-            stu_num = self._first_percent_number(student_val)
-            if exp_num is not None and stu_num is not None:
-                # absolute difference tolerance, e.g., |52 - 45| <= 2? -> correct
-                if abs(stu_num - exp_num) <= (percent_tolerance * 100.0):
-                    correct += 1
-                continue
-
-            # TEXT path
-            exp_texts = {self._clean_text(expected_val)}
-            # allow an alternative from comprehension for this same label
-            if lab in comp_map:
-                exp_texts.add(self._clean_text(comp_map[lab]))
-
-            stu_text = self._clean_text(student_val)
-
-            # fuzzy first
-            if any(fuzz.ratio(stu_text, et) >= text_fuzzy_thresh for et in exp_texts):
-                correct += 1
-                continue
-
-            # embeddings as a backstop (only for non-trivial strings)
-            if stu_text and any(
-                util.cos_sim(
-                    embedder.encode(stu_text, convert_to_tensor=True),
-                    embedder.encode(et,        convert_to_tensor=True)
-                ).item() >= embed_thresh
-                for et in exp_texts
-            ):
+            student_val_clean = student_val.strip().lower()
+            if expected_val_clean == student_val_clean:
                 correct += 1
 
-        return correct / max(len(labels), 1)
-
-    # def list_similarity(self, student_items, examiner_items, comprehension_items=None):
-    #     """
-    #     Compute similarity score for list-type questions.
-    #     Uses examiner answers as the gold standard but allows matches
-    #     from comprehension as valid alternatives.
-    #     Returns only a similarity score (0-1).
-    #     """
-    #     if comprehension_items is None:
-    #         comprehension_items = []
-
-    #     # Normalize sets
-    #     examiner_set = set(item.lower().strip() for item in examiner_items)
-    #     comprehension_set = set(item.lower().strip() for item in comprehension_items)
-    #     student_set = set(item.lower().strip() for item in student_items)
-
-    #     # Union of possible correct answers
-    #     valid_answers = examiner_set.union(comprehension_set)
-
-    #     total_required = len(examiner_set)
-    #     if total_required == 0:
-    #         return 0.0
-
-    #     score = 0
-    #     matched = set()
-
-    #     for student_item in student_set:
-    #         # Direct or fuzzy match against valid answers
-    #         for valid_item in valid_answers:
-    #             if valid_item in matched:
-    #                 continue
-    #             if student_item == valid_item or fuzz.ratio(student_item, valid_item) > 80:
-    #                 score += 1
-    #                 matched.add(valid_item)
-    #                 break
-
-    #     return round(score / total_required, 2)
+        return correct / max(len(exam_map), 1)
 
 
     def list_similarity(self, student_answer: str, examiner_answer: str, comprehension_text: str) -> float:
@@ -283,55 +206,6 @@ class PredictionService:
         score = min(correct / required, 1.0)  # cap at 1.0
 
         return score
-
-   
-   
-    # def list_similarity(self, student_items, examiner_items, comprehension_items=None, threshold=0.8):
-    #     # Ensure inputs are lists
-    #     if isinstance(examiner_items, str):
-    #         examiner_items = [examiner_items]
-    #     if isinstance(student_items, str):
-    #         student_items = [student_items]
-    #     if comprehension_items and isinstance(comprehension_items, str):
-    #         comprehension_items = [comprehension_items]
-
-    #     # Merge examiner + comprehension (if available)
-    #     reference_items = examiner_items[:]
-    #     if comprehension_items:
-    #         reference_items.extend(comprehension_items)
-
-    #     # Encode
-    #     ref_emb = model.encode(reference_items, convert_to_tensor=True)
-    #     stu_emb = model.encode(student_items, convert_to_tensor=True)
-
-    #     # Compute similarity scores
-    #     scores = []
-    #     for i in range(len(student_items)):
-    #         sims = util.cos_sim(stu_emb[i].unsqueeze(0), ref_emb)  # (1, N)
-    #         best_score = sims.max().item()  # highest similarity for this student item
-    #         scores.append(best_score)
-
-        
-    #     # Aggregate into a single score (mean)
-    #     aggregate_score = sum(scores) / len(scores) if scores else 0.0
-
-    #     return aggregate_score
-
-
-    def is_list_question(self, question_text: str) -> bool:
-        """
-        Detects if a question expects a list answer (e.g., 'Name three...', 'List four...').
-        """
-        patterns = [
-            r"\bname\s+\d+", 
-            r"\blist\s+\d+", 
-            r"\bgive\s+\d+", 
-            r"\bmention\s+\d+",
-            r"\bstate\s+\d+"
-        ]
-        q_lower = question_text.lower()
-        return any(re.search(p, q_lower) for p in patterns)
-
 
     def evaluate_answer(self, question, student_answer, examiner_answer, comprehension_items=None):
         """
@@ -413,25 +287,45 @@ class PredictionService:
 
     def predict(self, question_id, comprehension, question, examiner_answer, student_answer, question_score):
         """Hybrid scoring system with 2-feature input"""
+       
+       
+        # Step 0: Predict question type
+        qtype = self.qtype_predictor.predict(question)
+
+        print("[INFO] Question Type of", question, "is", qtype)
+
+
         # Step 1: Keyword overlap
         overlap_count, precision, recall, f1 = self.keyword_overlap(student_answer, examiner_answer)
 
 
+        # # Step 2: Decide similarity function
+        # if self._is_labelled_mapping_question(question, examiner_answer):
+        #     # label→value grading (strict by label)
+        #     semantic_similarity = self._label_map_similarity(
+        #         student_answer, examiner_answer, comprehension
+        #     )
+        # elif "\n" in examiner_answer or " - " in examiner_answer:
+        #     # list-type grading
+        #     semantic_similarity = self.list_similarity(student_answer, examiner_answer, comprehension)
+        # else:
+        #     # normal text similarity
+        #     weights = {'examiner': 0.1, 'comprehension': 0.9}
+        #     semantic_similarity = self.calculate_combined_similarity(
+        #         student_answer, examiner_answer, comprehension, weights
+        #     )
+
+        
         # Step 2: Decide similarity function
-        if self._is_labelled_mapping_question(question, examiner_answer):
-            # label→value grading (strict by label)
-            semantic_similarity = self._label_map_similarity(
-                student_answer, examiner_answer, comprehension
-            )
-        elif "\n" in examiner_answer or " - " in examiner_answer:
-            # list-type grading
+        if qtype == "Label_to_Value":
+            semantic_similarity = self._label_map_similarity(student_answer, examiner_answer, comprehension)
+            print("Semantic analysis", semantic_similarity)
+        elif qtype in ["List / Enumeration"]:
             semantic_similarity = self.list_similarity(student_answer, examiner_answer, comprehension)
-        else:
-            # normal text similarity
+        else:  # Text / Comprehension / Definition / Others
             weights = {'examiner': 0.1, 'comprehension': 0.9}
-            semantic_similarity = self.calculate_combined_similarity(
-                student_answer, examiner_answer, comprehension, weights
-            )
+            semantic_similarity = self.calculate_combined_similarity(student_answer, examiner_answer, comprehension, weights)
+
 
         adjusted_similarity = (semantic_similarity * 0.8) + (f1 * 0.2)
 
