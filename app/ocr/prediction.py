@@ -111,31 +111,33 @@ class PredictionService:
 
     def _is_labelled_mapping_question(self, question: str, examiner_answer: str):
         """
-        True if the task mentions 'labelled' AND it does NOT look like a list question.
-        We consider it a labelled mapping only if:
-        - examiner answer contains ROMAN_LABEL_RE OR
-        - question contains 'labelled' AND does not contain numeric count.
-        """
-        question_lower = question.lower() if isinstance(question, str) else ""
-        
-        # Detect if question expects a list (name X, list X, give X, mention X, state X)
-        list_patterns = [
-            r"\bname\s+(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten)\b",
-            r"\blist\s+(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten)\b",
-            r"\bgive\s+(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten)\b",
-            r"\bmention\s+(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten)\b",
-            r"\bstate\s+(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten)\b"
-        ]
-        is_list = any(re.search(p, question_lower) for p in list_patterns)
+        True if the task is a labelled mapping question.
 
-        # Labelled mapping detection
+        Conditions for labelled mapping:
+        1. Examiner answer contains ROMAN_LABEL_RE OR
+        2. Question contains 'labelled' AND
+        - it does NOT contain list patterns with numbers (digits or words)
+        """
+
+        question_lower = question.lower() if isinstance(question, str) else ""
+
+        # --- Detect list pattern with numbers (digits or words) ---
+        number_words = r"(?:one|two|three|four|five|six|seven|eight|nine|ten)"
+        list_patterns = [
+            rf"\bname\s+(?:\d+|{number_words})\b",
+            rf"\blist\s+(?:\d+|{number_words})\b",
+            rf"\bgive\s+(?:\d+|{number_words})\b",
+            rf"\bmention\s+(?:\d+|{number_words})\b",
+            rf"\bstate\s+(?:\d+|{number_words})\b"
+        ]
+        is_list_with_number = any(re.search(p, question_lower) for p in list_patterns)
+
+        # --- Detect labelled mapping ---
         has_labelled = "labelled" in question_lower
         has_label_pattern = isinstance(examiner_answer, str) and ROMAN_LABEL_RE.search(examiner_answer)
 
-        # It's a labelled mapping only if:
-        # - examiner answer contains labels OR
-        # - question mentions labelled AND it is NOT a list
-        return has_label_pattern or (has_labelled and not is_list)
+        # Labelled mapping: either answer has labels OR question says 'labelled' without a numeric list
+        return has_label_pattern or (has_labelled and not is_list_with_number)
 
 
     def _label_map_similarity(self, student_text: str, examiner_text: str, comprehension_text: str = None,
