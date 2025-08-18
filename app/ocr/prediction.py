@@ -322,7 +322,7 @@ class PredictionService:
             features = np.array([[strict_semantic_similarity, question_score]])
             strict_model_score = float(self.model.predict(features)[0])
             return strict_model_score
-
+            #  we should exempt label with list
         elif qtype in ["List / Enumeration"]:
             semantic_similarity = self.list_similarity(student_answer, examiner_answer, comprehension)
         else:  # Text / Comprehension / Definition / Others
