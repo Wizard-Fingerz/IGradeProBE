@@ -145,44 +145,70 @@ class PredictionService:
     #     return correct / max(len(labels), 1)
 
 
-    def _label_map_similarity_strict_order(self, student_text: str, examiner_text: str) -> float:
-        """
-        Label-to-Value grading with strict label order.
-        Partial credit allowed for each correct label in the correct sequence.
-        Works for numbers, percentages, or text.
-        """
-        # Extract ordered label->value lists
-        exam_matches = list(ROMAN_LABEL_RE.findall(examiner_text))
-        student_matches = list(ROMAN_LABEL_RE.findall(student_text))
+    # def _label_map_similarity_strict_order(self, student_text: str, examiner_text: str) -> float:
+    #     """
+    #     Label-to-Value grading with strict label order.
+    #     Partial credit allowed for each correct label in the correct sequence.
+    #     Works for numbers, percentages, or text.
+    #     """
+    #     # Extract ordered label->value lists
+    #     exam_matches = list(ROMAN_LABEL_RE.findall(examiner_text))
+    #     student_matches = list(ROMAN_LABEL_RE.findall(student_text))
 
-        total_labels = len(exam_matches)
-        if total_labels == 0:
+    #     total_labels = len(exam_matches)
+    #     if total_labels == 0:
+    #         return 0.0
+
+    #     correct_labels = 0
+
+    #     # Compare in order
+    #     for i, (lab, val) in enumerate(exam_matches):
+    #         if i < len(student_matches):
+    #             stu_lab, stu_val = student_matches[i]
+
+    #             # Check label matches (optional)
+    #             if lab.upper() != stu_lab.upper():
+    #                 continue
+
+    #             # Numeric comparison
+    #             try:
+    #                 if float(val) == float(stu_val):
+    #                     correct_labels += 1
+    #                     continue
+    #             except ValueError:
+    #                 pass
+
+    #             # Text comparison fallback
+    #             if val.strip().lower() == stu_val.strip().lower():
+    #                 correct_labels += 1
+
+    #     return correct_labels / total_labels
+
+
+
+    def _strict_label_map_similarity(self, student_text: str, examiner_text: str) -> float:
+        """
+        Strict comparison for Label_to_Value:
+        - Only exact matches count
+        - Fractional score: correct_labels / total_labels
+        """
+        exam_map = self._extract_label_map(examiner_text)
+        if not exam_map:
             return 0.0
+        
+        stu_map = self._extract_label_map(student_text, expected_labels=set(exam_map.keys()))
 
-        correct_labels = 0
+        correct = 0
+        for label, expected_val in exam_map.items():
+            expected_val_clean = expected_val.strip().lower()
+            student_val = stu_map.get(label, None)
+            if student_val is None:
+                continue
+            student_val_clean = student_val.strip().lower()
+            if expected_val_clean == student_val_clean:
+                correct += 1
 
-        # Compare in order
-        for i, (lab, val) in enumerate(exam_matches):
-            if i < len(student_matches):
-                stu_lab, stu_val = student_matches[i]
-
-                # Check label matches (optional)
-                if lab.upper() != stu_lab.upper():
-                    continue
-
-                # Numeric comparison
-                try:
-                    if float(val) == float(stu_val):
-                        correct_labels += 1
-                        continue
-                except ValueError:
-                    pass
-
-                # Text comparison fallback
-                if val.strip().lower() == stu_val.strip().lower():
-                    correct_labels += 1
-
-        return correct_labels / total_labels
+        return correct / max(len(exam_map), 1)
 
 
     def list_similarity(self, student_answer: str, examiner_answer: str, comprehension_text: str) -> float:
@@ -316,7 +342,7 @@ class PredictionService:
         
         # Step 2: Decide similarity function
         if qtype == "Label_to_Value":
-            strict_semantic_similarity = self._label_map_similarity_strict_order(student_answer, examiner_answer)
+            strict_semantic_similarity = self._strict_label_map_similarity(student_answer, examiner_answer)
             
             print("Semantic analysis", strict_semantic_similarity)
             features = np.array([[strict_semantic_similarity, question_score]])
