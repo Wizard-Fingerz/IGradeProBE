@@ -6,8 +6,9 @@ from nltk.corpus import stopwords
 from nltk.stem import WordNetLemmatizer
 import warnings
 from sentence_transformers import SentenceTransformer, util
-from fuzzywuzzy import fuzz, process
-
+# from fuzzywuzzy import fuzz, process
+from rapidfuzz import fuzz, process
+import re
 
 # Load embedding model once
 embedder = SentenceTransformer('sentence-transformers/all-mpnet-base-v2')
@@ -16,6 +17,9 @@ warnings.simplefilter("ignore")
 
 # Load spaCy's medium-sized English language model
 nlp = spacy.load("en_core_web_md")
+
+# Load semantic model
+model = SentenceTransformer("all-MiniLM-L6-v2")
 
 from transformers import pipeline
 
@@ -61,49 +65,141 @@ class PredictionService:
 
         return overlap_count, precision, recall, f1
 
+    # def list_similarity(self, student_items, examiner_items, comprehension_items=None):
+    #     """
+    #     Compute similarity score for list-type questions.
+    #     Uses examiner answers as the gold standard but allows matches
+    #     from comprehension as valid alternatives.
+    #     Returns only a similarity score (0-1).
+    #     """
+    #     if comprehension_items is None:
+    #         comprehension_items = []
 
-    def list_similarity(self, student_answer, examiner_answer, comprehension):
+    #     # Normalize sets
+    #     examiner_set = set(item.lower().strip() for item in examiner_items)
+    #     comprehension_set = set(item.lower().strip() for item in comprehension_items)
+    #     student_set = set(item.lower().strip() for item in student_items)
+
+    #     # Union of possible correct answers
+    #     valid_answers = examiner_set.union(comprehension_set)
+
+    #     total_required = len(examiner_set)
+    #     if total_required == 0:
+    #         return 0.0
+
+    #     score = 0
+    #     matched = set()
+
+    #     for student_item in student_set:
+    #         # Direct or fuzzy match against valid answers
+    #         for valid_item in valid_answers:
+    #             if valid_item in matched:
+    #                 continue
+    #             if student_item == valid_item or fuzz.ratio(student_item, valid_item) > 80:
+    #                 score += 1
+    #                 matched.add(valid_item)
+    #                 break
+
+    #     return round(score / total_required, 2)
+
+
+    def list_similarity(self, student_answer: str, examiner_answer: str, comprehension_text: str) -> float:
         """
-        Handle list-style questions (e.g., 'List 3 causes of...').
-        Returns a similarity score [0,1].
+        Compare list-type answers.
+        Returns similarity score (0–1) based on how many correct items student provides.
         """
-        # Split examiner into list points
-        points = [p.strip(" -•") for p in examiner_answer.split("\n") if p.strip()]
-        if len(points) == 1:
-            points = [p.strip() for p in examiner_answer.split(" - ") if p.strip()]
 
-        # If not a list, just fall back to normal similarity
-        if len(points) <= 1:
-            return self.calculate_combined_similarity(student_answer, examiner_answer, comprehension)
+        # --- Normalize ---
+        examiner_items = [x.strip().lower() for x in examiner_answer.split(",")]
+        comprehension_words = set(w.strip().lower() for w in comprehension_text.replace("\n", " ").split())
 
-        student_items = [s.strip() for s in student_answer.split("\n") if s.strip()]
-        if len(student_items) == 1:  
-            # fallback: space-separated
-            student_items = [s.strip() for s in student_answer.split() if s.strip()]
+        # Student answer -> break into lines / commas / semicolons
+        raw_items = student_answer.replace("\n", ",").replace(";", ",").split(",")
+        student_items = [x.strip().lower() for x in raw_items if x.strip()]
 
-        matches = 0
-        matched_exam_points = set()
+        # --- Matching ---
+        correct = 0
+        matched = set()
 
         for s_item in student_items:
-            # fuzzy match student item against examiner points
-            best_match = process.extractOne(s_item, points, scorer=fuzz.token_sort_ratio)
-            if best_match and best_match[1] >= 70:  # threshold
-                exam_item = best_match[0]
-                if exam_item not in matched_exam_points:
-                    matched_exam_points.add(exam_item)
-                    matches += 1
+            # 1. Direct match with examiner items
+            for e_item in examiner_items:
+                if fuzz.token_set_ratio(s_item, e_item) >= 90 and e_item not in matched:
+                    correct += 1
+                    matched.add(e_item)
+                    break
+            else:
+                # 2. If not in examiner's list, check if valid from comprehension
+                for word in comprehension_words:
+                    if fuzz.token_set_ratio(s_item, word) >= 90:
+                        correct += 1
+                        break
 
-        coverage_ratio = matches / len(points)
+        # --- Score ---
+        required = len(examiner_items)
+        score = min(correct / required, 1.0)  # cap at 1.0
 
-        # Blend fuzzy match coverage with semantic similarity
-        semantic_sim = self.calculate_combined_similarity(student_answer, examiner_answer, comprehension)
-        list_similarity_score = (0.6 * coverage_ratio) + (0.4 * semantic_sim)
+        return score
 
-        return min(max(list_similarity_score, 0.0), 1.0)
+   
+   
+    # def list_similarity(self, student_items, examiner_items, comprehension_items=None, threshold=0.8):
+    #     # Ensure inputs are lists
+    #     if isinstance(examiner_items, str):
+    #         examiner_items = [examiner_items]
+    #     if isinstance(student_items, str):
+    #         student_items = [student_items]
+    #     if comprehension_items and isinstance(comprehension_items, str):
+    #         comprehension_items = [comprehension_items]
+
+    #     # Merge examiner + comprehension (if available)
+    #     reference_items = examiner_items[:]
+    #     if comprehension_items:
+    #         reference_items.extend(comprehension_items)
+
+    #     # Encode
+    #     ref_emb = model.encode(reference_items, convert_to_tensor=True)
+    #     stu_emb = model.encode(student_items, convert_to_tensor=True)
+
+    #     # Compute similarity scores
+    #     scores = []
+    #     for i in range(len(student_items)):
+    #         sims = util.cos_sim(stu_emb[i].unsqueeze(0), ref_emb)  # (1, N)
+    #         best_score = sims.max().item()  # highest similarity for this student item
+    #         scores.append(best_score)
+
+        
+    #     # Aggregate into a single score (mean)
+    #     aggregate_score = sum(scores) / len(scores) if scores else 0.0
+
+    #     return aggregate_score
 
 
+    def is_list_question(self, question_text: str) -> bool:
+        """
+        Detects if a question expects a list answer (e.g., 'Name three...', 'List four...').
+        """
+        patterns = [
+            r"\bname\s+\d+", 
+            r"\blist\s+\d+", 
+            r"\bgive\s+\d+", 
+            r"\bmention\s+\d+",
+            r"\bstate\s+\d+"
+        ]
+        q_lower = question_text.lower()
+        return any(re.search(p, q_lower) for p in patterns)
 
 
+    def evaluate_answer(self, question, student_answer, examiner_answer, comprehension_items=None):
+        """
+        Automatically decides whether to use list similarity or text similarity
+        based on the question type.
+        """
+        if self.is_list_question(question):
+            return self.list_similarity(student_answer, examiner_answer, comprehension_items)
+        else:
+            # fallback for normal text answers (fuzzy match)
+            return round(fuzz.ratio(" ".join(student_answer), " ".join(examiner_answer)) / 100, 2)
 
     def refine_with_llm(self, question, student_answer, examiner_answer, comprehension, raw_score, max_score):
         """Optional: LLM reasoning refinement"""
@@ -181,7 +277,7 @@ class PredictionService:
         if "\n" in examiner_answer or " - " in examiner_answer:
             semantic_similarity = self.list_similarity(student_answer, examiner_answer, comprehension)
         else:
-            weights = {'examiner': 0.3, 'comprehension': 0.7}
+            weights = {'examiner': 0.1, 'comprehension': 0.9}
             semantic_similarity = self.calculate_combined_similarity(
                 student_answer, examiner_answer, comprehension, weights
             )
