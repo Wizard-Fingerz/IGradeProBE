@@ -186,12 +186,37 @@ class PredictionService:
 
 
 
+    # def _strict_label_map_similarity(self, student_text: str, examiner_text: str) -> float:
+    #     """
+    #     Strict comparison for Label_to_Value:
+    #     - Only exact matches count
+    #     - Fractional score: correct_labels / total_labels
+    #     """
+    #     exam_map = self._extract_label_map(examiner_text)
+    #     if not exam_map:
+    #         return 0.0
+        
+    #     stu_map = self._extract_label_map(student_text, expected_labels=set(exam_map.keys()))
+
+    #     correct = 0
+    #     for label, expected_val in exam_map.items():
+    #         expected_val_clean = expected_val.strip().lower()
+    #         student_val = stu_map.get(label, None)
+    #         if student_val is None:
+    #             continue
+    #         student_val_clean = student_val.strip().lower()
+    #         if expected_val_clean == student_val_clean:
+    #             correct += 1
+
+    #     return correct / max(len(exam_map), 1)
+
     def _strict_label_map_similarity(self, student_text: str, examiner_text: str) -> float:
         """
         Strict comparison for Label_to_Value:
-        - Only exact matches count
+        - Accepts 99% similarity (fuzzy match) instead of only exact matches
         - Fractional score: correct_labels / total_labels
         """
+
         exam_map = self._extract_label_map(examiner_text)
         if not exam_map:
             return 0.0
@@ -205,10 +230,12 @@ class PredictionService:
             if student_val is None:
                 continue
             student_val_clean = student_val.strip().lower()
-            if expected_val_clean == student_val_clean:
+            # Accept 99% similarity instead of only exact match
+            if fuzz.ratio(expected_val_clean, student_val_clean) >= 90:
                 correct += 1
 
         return correct / max(len(exam_map), 1)
+
 
 
     def list_similarity(self, student_answer: str, examiner_answer: str, comprehension_text: str) -> float:

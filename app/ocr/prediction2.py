@@ -1,8 +1,8 @@
 import joblib
 
 class QuestionTypePredictor:
-    def __init__(self, model_path='./new_dump/best_model (2).pkl',
-                 vectorizer_path='./new_dump/tfidf_vectorizer (2).pkl'):
+    def __init__(self, model_path='./new_dump/best_model.pkl',
+                 vectorizer_path='./new_dump/tfidf_vectorizer.pkl'):
         self.model = joblib.load(model_path)
         self.vectorizer = joblib.load(vectorizer_path)
         print(f"✅ Question Type model loaded from {model_path}")
