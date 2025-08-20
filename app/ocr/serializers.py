@@ -8,9 +8,7 @@ class ScriptPageSerializer(serializers.ModelSerializer):
 
 class StudentScriptSerializer(serializers.ModelSerializer):
     pages = ScriptPageSerializer(many=True, read_only=True)
-    student = serializers.StringRelatedField()  # Use StringRelatedField to display student information
-    subject = serializers.StringRelatedField()  # Use StringRelatedField to display subject information
-
+ 
     class Meta:
         model = StudentScript
-        fields = ["id", "subject", "uploaded_at", "student", "pages"]
+        fields = ["id", "subject", 'subject_name', "uploaded_at", "student_id", "student_name", "candidate_number", "pages"]

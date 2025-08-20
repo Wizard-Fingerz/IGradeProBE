@@ -16,6 +16,10 @@ class StudentScript(models.Model):
     def student_name(self):
         return self.student_id.get_full_name()
 
+    @property
+    def candidate_number(self):
+        return self.student_id.examination_number
+
     def __str__(self):
         return f"Script for Student {self.student_id}"
 
