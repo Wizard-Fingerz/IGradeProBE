@@ -283,7 +283,8 @@ def extract_all_text_sequentially(text):
 
     # Patterns to clean up from questions (and optionally answers)
     question_artifact_patterns = [
-        r'Index Number:.*?(?=\n|$)',  # Remove "Index Number: ..." starting from the colon up to newline or end
+        r'Index\s*Number\s*[:\.]*\s*.*?(?=\n|$)',
+        # r'Index Number:.*?(?=\n|$)',  # Remove "Index Number: ..." starting from the colon up to newline or end
         r'Candidate Name\s*:?[\s\S]*?(?=\n|$)',  # Remove "Candidate Name: ..." up to newline or end
         r'Do not write in this margin[\s\S]*?(?=\n|$)',  # Remove "Do not write in this margin..." up to newline or end
         r'Do not write on this page[\s\S]*?(?=\n|$)',  # Remove "Do not write on this page..." up to newline or end
@@ -486,6 +487,8 @@ def extract_all_text_sequentially(text):
         final_result.append(item)
 
     return final_result
+
+
 
 def extract_all_text_between_as_ae(text):
     if not isinstance(text, str):  # Ensure text is a string
