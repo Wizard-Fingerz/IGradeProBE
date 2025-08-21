@@ -21,7 +21,7 @@ warnings.simplefilter("ignore")
 nlp = spacy.load("en_core_web_md")
 
 # Load semantic model
-model = SentenceTransformer("all-MiniLM-L6-v2")
+sentence_model = SentenceTransformer("all-MiniLM-L6-v2")
 
 from transformers import pipeline
 
@@ -238,44 +238,99 @@ class PredictionService:
 
 
 
-    def list_similarity(self, student_answer: str, examiner_answer: str, comprehension_text: str) -> float:
+    # def list_similarity(self, student_answer: str, examiner_answer: str, comprehension_text: str) -> float:
+    #     """
+    #     Compare list-type answers.
+    #     Returns similarity score (0–1) based on how many correct items student provides.
+    #     """
+
+    #     # --- Normalize ---
+    #     examiner_items = [x.strip().lower() for x in examiner_answer.split(",")]
+    #     comprehension_words = set(w.strip().lower() for w in comprehension_text.replace("\n", " ").split())
+
+    #     # Student answer -> break into lines / commas / semicolons
+    #     raw_items = student_answer.replace("\n", ",").replace(";", ",").split(",")
+    #     student_items = [x.strip().lower() for x in raw_items if x.strip()]
+
+    #     # --- Matching ---
+    #     correct = 0
+    #     matched = set()
+
+    #     for s_item in student_items:
+    #         # 1. Direct match with examiner items
+    #         for e_item in examiner_items:
+    #             if fuzz.token_set_ratio(s_item, e_item) >= 90 and e_item not in matched:
+    #                 correct += 1
+    #                 matched.add(e_item)
+    #                 break
+    #         else:
+    #             # 2. If not in examiner's list, check if valid from comprehension
+    #             for word in comprehension_words:
+    #                 if fuzz.token_set_ratio(s_item, word) >= 90:
+    #                     correct += 1
+    #                     break
+
+    #     # --- Score ---
+    #     required = len(examiner_items)
+    #     score = min(correct / required, 1.0)  # cap at 1.0
+
+    #     return score
+
+    def list_similarity(
+            self, 
+            student_answer: str, 
+            examiner_answer: str, 
+            comprehension_text: str, 
+            question_text: str
+        ) -> float:
         """
-        Compare list-type answers.
-        Returns similarity score (0–1) based on how many correct items student provides.
+        Compare list-type answers (list only, no explanations).
+        Returns similarity score (0–1) based on how many correct items the student provides,
+        normalized by the number of points asked in the question (or examiner+comprehension list if unspecified).
         """
 
-        # --- Normalize ---
-        examiner_items = [x.strip().lower() for x in examiner_answer.split(",")]
-        comprehension_words = set(w.strip().lower() for w in comprehension_text.replace("\n", " ").split())
+        # --- Normalize examiner’s list ---
+        examiner_items = [x.strip().lower() for x in examiner_answer.split(",") if x.strip()]
 
-        # Student answer -> break into lines / commas / semicolons
+        # --- Expand possible valid items from comprehension ---
+        # (Break comprehension into unique chunks/phrases, not just words)
+        comp_candidates = set()
+        for line in comprehension_text.replace("\n", " ").split("."):
+            # split into phrases by commas/dashes too
+            for chunk in line.replace(";", ",").split(","):
+                chunk = chunk.strip().lower()
+                if len(chunk.split()) > 1:  # ignore single words like 'the', 'and'
+                    comp_candidates.add(chunk)
+
+        # --- Merge examiner and comprehension candidates ---
+        valid_items = set(examiner_items) | comp_candidates
+
+        # --- Normalize student’s answer ---
         raw_items = student_answer.replace("\n", ",").replace(";", ",").split(",")
         student_items = [x.strip().lower() for x in raw_items if x.strip()]
 
-        # --- Matching ---
+        # --- Matching logic ---
         correct = 0
         matched = set()
 
         for s_item in student_items:
-            # 1. Direct match with examiner items
-            for e_item in examiner_items:
-                if fuzz.token_set_ratio(s_item, e_item) >= 90 and e_item not in matched:
+            for v_item in valid_items:
+                if fuzz.token_set_ratio(s_item, v_item) >= 90 and v_item not in matched:
                     correct += 1
-                    matched.add(e_item)
+                    matched.add(v_item)
                     break
-            else:
-                # 2. If not in examiner's list, check if valid from comprehension
-                for word in comprehension_words:
-                    if fuzz.token_set_ratio(s_item, word) >= 90:
-                        correct += 1
-                        break
 
-        # --- Score ---
-        required = len(examiner_items)
-        score = min(correct / required, 1.0)  # cap at 1.0
+        # --- Figure out denominator (expected points) ---
+        expected_points = self.extract_expected_points(question_text)
+        if not expected_points:
+            expected_points = len(examiner_items)  # stick to examiner list count, not comprehension
+
+        # --- Compute score ---
+        score = min(correct / expected_points, 1.0)
 
         return score
 
+   
     def evaluate_answer(self, question, student_answer, examiner_answer, comprehension_items=None):
         """
         Automatically decides whether to use list similarity or text similarity
@@ -310,6 +365,168 @@ class PredictionService:
             return min(max(refined_score, 0), max_score)  # clamp to [0, max_score]
         except:
             return raw_score  # fallback if parsing fails
+
+
+    def extract_expected_points(self, question_text: str) -> int:
+        """
+        Extracts the number of points required from the question.
+        Example: "Explain five importance of democracy" -> returns 5
+        """
+        match = re.search(r"\b(one|two|three|four|five|six|seven|eight|nine|ten|\d+)\b", question_text, re.IGNORECASE)
+        if not match:
+            return 0
+        
+        word_to_num = {
+            "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
+            "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10
+        }
+        
+        value = match.group(0).lower()
+        if value.isdigit():
+            return int(value)
+        return word_to_num.get(value, 0)
+
+    def preprocess_list_and_explain_student_answer(self, student_answer):
+        """
+        Groups multi-line explanations into single text blocks
+        based on the format 'Point: explanation'.
+        """
+        grouped = []
+        current = ""
+
+        for line in student_answer.split("\n"):
+            line = line.strip()
+            if not line:
+                continue
+
+            # If line looks like a new point (has ':' or numbering)
+            if re.match(r"^[a-zA-Z].*?:", line) or re.match(r"^\d+[\).]", line):
+                if current:
+                    grouped.append(current.strip())
+                current = line
+            else:
+                # continuation of the previous point
+                current += " " + line
+
+        if current:
+            grouped.append(current.strip())
+
+        return grouped
+
+    def list_and_explain_similarity(self, question_text, student_answer, examiner_answer, comprehension, question_score):
+        """
+        Evaluate a student's List & Explain answer with semantic similarity.
+        Returns a normalized score (0–1) and per-point details.
+        """
+
+        print("Student answer received:", student_answer)
+
+        # --- Step 1: Extract expected number of points ---
+        expected_points = self.extract_expected_points(question_text)
+
+        # --- Step 2: Split examiner points ---
+        examiner_points = [p.strip(" .-") for p in examiner_answer.split("\n") if p.strip()]
+        if not examiner_points:
+            return {"score": 0.0, "details": []}
+
+        if expected_points == 0:
+            expected_points = len(examiner_points)
+
+        # --- Step 3: Preprocess student answer into smaller sentences ---
+        import re
+        stu_sentences = re.split(r'[.;)\n•\d]+', student_answer)
+        stu_sentences = [s.strip() for s in stu_sentences if s.strip()]
+        if not stu_sentences:
+            return {"score": 0.0, "details": []}
+
+        # --- Step 4: Encode comprehension (split into sentences for robustness) ---
+        comp_sentences = re.split(r'[.;)\n]+', comprehension)
+        comp_sentences = [s.strip() for s in comp_sentences if s.strip()]
+        comp_embeddings = [sentence_model.encode(s, convert_to_tensor=True) for s in comp_sentences]
+
+        # --- Step 5: Set thresholds ---
+        LIST_THRESHOLD = 0.45
+        EXPLAIN_THRESHOLD = 0.35
+
+        point_scores = []
+        details = []
+
+        # --- Step 6: Compare each examiner point to student sentences ---
+        # --- Step 6: Compare each examiner point to student sentences ---
+        # Original: for idx, point in enumerate(examiner_points[:expected_points]):
+        # New: iterate over all student sentences and check against all examiner points
+
+        matched_examiner = set()  # keep track of already matched examiner points
+
+        for s in stu_sentences:
+            s_emb = sentence_model.encode(s, convert_to_tensor=True)
+
+            best_score = 0.0
+            best_idx = -1
+            best_sim_point = 0.0
+            best_sim_comp = 0.0
+
+            for idx, point in enumerate(examiner_points):
+                if idx in matched_examiner:
+                    continue  # skip already matched examiner point
+
+                point_emb = sentence_model.encode(point, convert_to_tensor=True)
+                sim_with_point = util.cos_sim(point_emb, s_emb).item()
+                sim_with_comp = max([util.cos_sim(ce, s_emb).item() for ce in comp_embeddings])
+
+                score = 0.0
+                if sim_with_point > LIST_THRESHOLD:
+                    score = 0.33
+                    if sim_with_comp > EXPLAIN_THRESHOLD:
+                        score += 0.67
+
+                if score > best_score:
+                    best_score = score
+                    best_idx = idx
+                    best_sim_point = sim_with_point
+                    best_sim_comp = sim_with_comp
+
+            if best_idx != -1:
+                matched_examiner.add(best_idx)
+                point_scores.append(best_score)
+                details.append({
+                    "examiner_point": examiner_points[best_idx],
+                    "student_best_match": s,
+                    "similarity_with_point": round(best_sim_point, 3),
+                    "similarity_with_comprehension": round(best_sim_comp, 3),
+                    "score_for_point": round(best_score, 2)
+                })
+
+        # --- Step 7: Pad unmatched examiner points with 0 ---
+        for idx, point in enumerate(examiner_points):
+            if idx not in matched_examiner:
+                point_scores.append(0.0)
+                details.append({
+                    "examiner_point": point,
+                    "student_best_match": "",
+                    "similarity_with_point": 0.0,
+                    "similarity_with_comprehension": 0.0,
+                    "score_for_point": 0.0
+                })
+
+
+        # --- Step 8: Average score across points ---
+        avg_similarity = sum(point_scores) / expected_points if expected_points else 0.0
+
+        avg_similarity = min(avg_similarity, 1)
+
+        # Debug print
+        for d in details:
+            print(f"Examiner: {d['examiner_point']}\n"
+                f"Student: {d['student_best_match']}\n"
+                f"Sim(Point): {d['similarity_with_point']}, "
+                f"Sim(Comp): {d['similarity_with_comprehension']}, "
+                f"Score: {d['score_for_point']}\n---")
+
+        return avg_similarity
+
+
+
 
     def calculate_combined_similarity(self, student_answer, examiner_answer, comprehension, weights=None):
         if not student_answer or not examiner_answer or not comprehension:
@@ -376,11 +593,29 @@ class PredictionService:
             strict_model_score = float(self.model.predict(features)[0])
             return strict_model_score
             #  we should exempt label with list
+        # elif qtype in ["List / Enumeration"]:
+        #     semantic_similarity = self.list_similarity(student_answer, examiner_answer, comprehension)
         elif qtype in ["List / Enumeration"]:
-            semantic_similarity = self.list_similarity(student_answer, examiner_answer, comprehension)
+
+            
+            semantic_similarity = self.list_similarity(student_answer, examiner_answer, comprehension, question)
+        
+        elif qtype in ["List and Explain"]:
+            list_and_explain_semantic_similarity = self.list_and_explain_similarity(question, student_answer, examiner_answer, comprehension, question_score)
+            print("list_and_explain_semantic_similarity", list_and_explain_semantic_similarity)
+
+            list_model_score = float(list_and_explain_semantic_similarity * question_score)
+
+            print('Prediction After similarity',list_model_score)
+            print('Question Score',question_score)
+            return list_model_score
+        
+       
         else:  # Text / Comprehension / Definition / Others
             weights = {'examiner': 0.1, 'comprehension': 0.9}
             semantic_similarity = self.calculate_combined_similarity(student_answer, examiner_answer, comprehension, weights)
+
+            print("semantic_similarity", semantic_similarity)
 
 
         adjusted_similarity = (semantic_similarity * 0.8) + (f1 * 0.2)
@@ -389,8 +624,12 @@ class PredictionService:
         # Step 3: Build feature vector (ONLY 2 features)
         features = np.array([[adjusted_similarity, question_score]])
 
+        
+
         # Step 4: Model prediction
         model_score = float(self.model.predict(features)[0])
+
+        print("model_score",model_score)
 
         # Step 5: Rule-based override (full marks if coverage)
         if overlap_count >= question_score:
@@ -398,6 +637,7 @@ class PredictionService:
 
         # Step 6: Clip model score
         model_score = min(model_score, question_score)
+
 
         # Step 7: Optional LLM refinement
         llm_score = self.refine_with_llm(

@@ -77,12 +77,41 @@ class ExamCreateView(generics.CreateAPIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def create(self, request, *args, **kwargs):
-        print(request.data)  # To check the incoming request data
-        serializer = self.get_serializer(data=request.data)
+        import copy
+
+        def clean_sub_questions(sub_questions):
+            cleaned = []
+            for sq in sub_questions:
+                # Remove blank or empty fields
+                sq_clean = {k: v for k, v in sq.items() if v not in [None, '', [], {}]}
+                # Remove sub_questions with all fields empty
+                if sq_clean:
+                    cleaned.append(sq_clean)
+            return cleaned
+
+        def clean_questions(questions):
+            cleaned = []
+            for q in questions:
+                q_clean = {k: v for k, v in q.items() if v not in [None, '', [], {}]}
+                # Clean sub_questions if present
+                if 'sub_questions' in q_clean and isinstance(q_clean['sub_questions'], list):
+                    q_clean['sub_questions'] = clean_sub_questions(q_clean['sub_questions'])
+                    # Remove sub_questions if now empty
+                    if not q_clean['sub_questions']:
+                        q_clean.pop('sub_questions')
+                # Remove questions with all fields empty
+                if q_clean:
+                    cleaned.append(q_clean)
+            return cleaned
+
+        data = copy.deepcopy(request.data)
+        if 'questions' in data and isinstance(data['questions'], list):
+            data['questions'] = clean_questions(data['questions'])
+
+        serializer = self.get_serializer(data=data)
         if not serializer.is_valid():
-            print(serializer.errors)  # To see detailed errors
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-        
+
         # Set the examiner to the current user
         serializer.validated_data['created_by'] = request.user
 
@@ -91,7 +120,6 @@ class ExamCreateView(generics.CreateAPIView):
 
         headers = self.get_success_headers(serializer.data)
         return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
-    
 
 class ExamUpdateView(generics.UpdateAPIView):
     queryset = Exam.objects.all()
