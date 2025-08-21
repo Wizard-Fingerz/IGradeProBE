@@ -237,6 +237,7 @@ def clean_text(text: str) -> str:
     text = re.sub(r"\s+", " ", text).strip()
     return text
 
+# testing
 def extract_all_text_sequentially(text):
     """
     Improved fault-tolerant extraction:
