@@ -238,6 +238,29 @@ class PredictionService:
 
 
 
+
+    def extract_expected_points(self, question_text: str) -> int:
+        """
+        Extracts the number of points required from the question.
+        Example: "Explain five importance of democracy" -> returns 5
+        """
+        match = re.search(r"\b(one|two|three|four|five|six|seven|eight|nine|ten|\d+)\b", question_text, re.IGNORECASE)
+        if not match:
+            return 0
+        
+        word_to_num = {
+            "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
+            "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10
+        }
+        
+        value = match.group(0).lower()
+        if value.isdigit():
+            return int(value)
+        return word_to_num.get(value, 0)
+
+
+
+
     # def list_similarity(self, student_answer: str, examiner_answer: str, comprehension_text: str) -> float:
     #     """
     #     Compare list-type answers.
@@ -276,74 +299,66 @@ class PredictionService:
 
     #     return score
 
-    def list_similarity(
-            self, 
-            student_answer: str, 
-            examiner_answer: str, 
-            comprehension_text: str, 
-            question_text: str
-        ) -> float:
+
+    def list_similarity(self, student_answer, examiner_answer, comprehension_text, question_text):
         """
-        Compare list-type answers using sentence embeddings.
-        Returns similarity score (0–1) based on how many correct items student provides,
-        normalized by the number of expected points.
+        Marks list-type questions per-point using semantic similarity.
+        Each expected point contributes equally to total score.
         """
 
-        # --- Normalize examiner’s list ---
+        # --- Split examiner points and comprehension points ---
         examiner_items = [x.strip() for x in examiner_answer.replace("\n", ",").split(",") if x.strip()]
-
-        # --- Comprehension as points ---
         comp_items = [x.strip() for x in comprehension_text.replace("\n", ",").split(",") if x.strip()]
-
-        # --- Normalize student’s list ---
         student_items = [x.strip() for x in student_answer.replace("\n", ",").replace(";", ",").split(",") if x.strip()]
 
-        # --- Encode everything ---
+        # --- Encode all points ---
         examiner_embs = sentence_model.encode(examiner_items, convert_to_tensor=True) if examiner_items else []
         comp_embs = sentence_model.encode(comp_items, convert_to_tensor=True) if comp_items else []
         student_embs = sentence_model.encode(student_items, convert_to_tensor=True) if student_items else []
 
-        correct = 0
+        # --- Expected points from question ---
+        expected_points = self.extract_expected_points(question_text)
+        if expected_points == 0:
+            expected_points = len(examiner_items) if examiner_items else 1
+
+        point_weight = 1.0 / expected_points
+        total_score = 0.0
         matched = set()
 
-        # --- Matching logic ---
+        # --- Compare each student point ---
         for i, s_emb in enumerate(student_embs):
             best_sim = 0
             best_match = None
 
-            # 1. Check similarity with examiner’s items
+            # 1. Check similarity with examiner points
             if len(examiner_embs) > 0:
                 sims_exam = util.cos_sim(s_emb, examiner_embs)[0]
-                best_exam_idx = int(sims_exam.argmax())
-                best_exam_sim = float(sims_exam[best_exam_idx])
-                if best_exam_sim > best_sim:
-                    best_sim = best_exam_sim
-                    best_match = ("examiner", best_exam_idx)
+                best_idx = int(sims_exam.argmax())
+                best_sim_exam = float(sims_exam[best_idx])
+                if best_sim_exam > best_sim:
+                    best_sim = best_sim_exam
+                    best_match = ("examiner", best_idx)
 
-            # 2. If not high enough, check comprehension
+            # 2. Check similarity with comprehension points
             if len(comp_embs) > 0:
                 sims_comp = util.cos_sim(s_emb, comp_embs)[0]
-                best_comp_idx = int(sims_comp.argmax())
-                best_comp_sim = float(sims_comp[best_comp_idx])
-                if best_comp_sim > best_sim:
-                    best_sim = best_comp_sim
-                    best_match = ("comprehension", best_comp_idx)
+                best_idx_comp = int(sims_comp.argmax())
+                best_sim_comp = float(sims_comp[best_idx_comp])
+                if best_sim_comp > best_sim:
+                    best_sim = best_sim_comp
+                    best_match = ("comprehension", best_idx_comp)
 
-            # Threshold for considering it correct
-            if best_sim >= 0.7:  # tune threshold (0.65–0.75 works well)
-                if best_match not in matched:  # avoid duplicate matching
-                    correct += 1
+            # Threshold to count as correct
+            if best_sim >= 0.7:
+                if best_match not in matched:
+                    total_score += point_weight
                     matched.add(best_match)
 
-        # --- Denominator: expected points ---
-        expected_points = self.extract_expected_points(question_text)
-        if not expected_points:
-            expected_points = len(examiner_items) if examiner_items else 1
+        # Cap total score at 1.0
+        total_score = min(total_score, 1.0)
 
-        # --- Compute score ---
-        score = min(correct / expected_points, 1.0)
+        return total_score
 
-        return score
 
     def evaluate_answer(self, question, student_answer, examiner_answer, comprehension_items=None):
         """
@@ -380,25 +395,6 @@ class PredictionService:
         except:
             return raw_score  # fallback if parsing fails
 
-
-    def extract_expected_points(self, question_text: str) -> int:
-        """
-        Extracts the number of points required from the question.
-        Example: "Explain five importance of democracy" -> returns 5
-        """
-        match = re.search(r"\b(one|two|three|four|five|six|seven|eight|nine|ten|\d+)\b", question_text, re.IGNORECASE)
-        if not match:
-            return 0
-        
-        word_to_num = {
-            "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
-            "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10
-        }
-        
-        value = match.group(0).lower()
-        if value.isdigit():
-            return int(value)
-        return word_to_num.get(value, 0)
 
     def preprocess_list_and_explain_student_answer(self, student_answer):
         """
@@ -612,7 +608,16 @@ class PredictionService:
         elif qtype in ["List / Enumeration"]:
 
             
-            semantic_similarity = self.list_similarity(student_answer, examiner_answer, comprehension, question)
+            list_semantic_similarity = self.list_similarity(examiner_answer,student_answer, comprehension, question)
+            print("List Semantic", list_semantic_similarity)
+            list_model_score = float(list_semantic_similarity * question_score)
+
+            print("Expected List Score", list_model_score)
+
+            print('Prediction After similarity',list_model_score)
+            print('Question Score',question_score)
+            return list_model_score
+        
         
         elif qtype in ["List and Explain"]:
             list_and_explain_semantic_similarity = self.list_and_explain_similarity(question, student_answer, examiner_answer, comprehension, question_score)

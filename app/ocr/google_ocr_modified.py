@@ -164,9 +164,36 @@ import re
 
 def clean_final_output(data):
     """
-    Cleans up question/answer dicts by removing regex tags and exam marks.
+    Cleans up question/answer dicts by removing regex tags, exam marks,
+    and common exam artifacts like 'Index Number' or 'Do not write in this margin'.
     """
     cleaned = []
+    # Patterns for unwanted exam artifacts
+    artifact_patterns = [
+        r'Index\s*Number.*?(?=\.|$)',  # Remove "Index Number..." up to period or end
+        r'Do not write in this margin.*?(?=\.|$)',  # Remove "Do not write in this margin..." up to period or end
+        r'Name\s*.*?(?=\.|$)',  # Remove "Name ..." up to period or end
+        r'Candidate\s*Number.*?(?=\.|$)',  # Remove "Candidate Number..." up to period or end
+        r'Centre\s*Number.*?(?=\.|$)',  # Remove "Centre Number..." up to period or end
+        r'For\s*Examiner.*?(?=\.|$)',  # Remove "For Examiner..." up to period or end
+        r'For\s*Marker.*?(?=\.|$)',  # Remove "For Marker..." up to period or end
+        r'Page\s*\d+\s*of\s*\d+',  # Remove "Page x of y"
+        r'Question\s*Paper.*?(?=\.|$)',  # Remove "Question Paper..." up to period or end
+        r'Instructions.*?(?=\.|$)',  # Remove "Instructions..." up to period or end
+        r'Write your name.*?(?=\.|$)',  # Remove "Write your name..." up to period or end
+        r'Write your index number.*?(?=\.|$)',  # Remove "Write your index number..." up to period or end
+        r'Write in black or blue ink.*?(?=\.|$)',  # Remove "Write in black or blue ink..." up to period or end
+        r'All questions should be answered.*?(?=\.|$)',  # Remove "All questions should be answered..." up to period or end
+        r'Answer all questions.*?(?=\.|$)',  # Remove "Answer all questions..." up to period or end
+        r'Each question carries.*?(?=\.|$)',  # Remove "Each question carries..." up to period or end
+        r'You may use.*?(?=\.|$)',  # Remove "You may use..." up to period or end
+        r'You are reminded.*?(?=\.|$)',  # Remove "You are reminded..." up to period or end
+        r'Additional materials.*?(?=\.|$)',  # Remove "Additional materials..." up to period or end
+        r'Blank page',  # Remove "Blank page"
+    ]
+
+    artifact_regex = re.compile("|".join(artifact_patterns), re.IGNORECASE)
+
     for item in data:
         q = item.get("question", "")
         a = item.get("answer", "")
@@ -185,13 +212,15 @@ def clean_final_output(data):
         a = re.sub(r'\[\s*\d+\s*marks?\s*\]', '', a, flags=re.IGNORECASE)
         a = re.sub(r'\(\s*\d+\s*marks?\s*\)', '', a, flags=re.IGNORECASE)
 
+        # Remove common exam artifacts from questions
+        q = artifact_regex.sub('', q)
+
         # Remove extra spaces & normalize newlines
         q = re.sub(r'\s+', ' ', q).strip()
         a = re.sub(r'\s+', ' ', a).strip()
 
         cleaned.append({"question": q, "answer": a})
     return cleaned
-
 
 
 def clean_text(text: str) -> str:
@@ -215,6 +244,7 @@ def extract_all_text_sequentially(text):
     - Uses markers when available.
     - Recovers missing questions by scanning unmapped text for question-like phrases.
     - Ensures every answer has a mapped question (or a placeholder).
+    - Cleans up common exam artifacts and instructions from questions.
     """
 
     if not isinstance(text, str):
@@ -250,6 +280,65 @@ def extract_all_text_sequentially(text):
         r'(^\d+[:.)])|(who|what|when|where|why|how|explain|describe|define|list|state|give)',
         re.IGNORECASE
     )
+
+    # Patterns to clean up from questions (and optionally answers)
+    question_artifact_patterns = [
+        r'Index Number:.*?(?=\n|$)',  # Remove "Index Number: ..." starting from the colon up to newline or end
+        r'Candidate Name\s*:?[\s\S]*?(?=\n|$)',  # Remove "Candidate Name: ..." up to newline or end
+        r'Do not write in this margin[\s\S]*?(?=\n|$)',  # Remove "Do not write in this margin..." up to newline or end
+        r'Do not write on this page[\s\S]*?(?=\n|$)',  # Remove "Do not write on this page..." up to newline or end
+        r'For Examiner\'?s? Use Only[\s\S]*?(?=\n|$)',  # Remove "For Examiner's Use Only..." up to newline or end
+        r'You may use.*?(?=\.|$)',  # Remove "You may use..." up to period or end
+        r'You are reminded.*?(?=\.|$)',  # Remove "You are reminded..." up to period or end
+        r'Additional materials.*?(?=\.|$)',  # Remove "Additional materials..." up to period or end
+        r'Blank page',  # Remove "Blank page"
+        r'Write your answers.*?(?=\.|$)',  # Remove "Write your answers..." up to period or end
+        r'Answer all questions.*?(?=\.|$)',  # Remove "Answer all questions..." up to period or end
+        r'All questions carry equal marks.*?(?=\.|$)',  # Remove "All questions carry equal marks..." up to period or end
+        r'Each question carries.*?(?=\.|$)',  # Remove "Each question carries..." up to period or end
+        r'Use a separate answer sheet.*?(?=\.|$)',  # Remove "Use a separate answer sheet..." up to period or end
+        r'Instructions.*?(?=\.|$)',  # Remove "Instructions..." up to period or end
+        r'Page \d+ of \d+',  # Remove "Page x of y"
+        r'Centre Number\s*:?[\s\S]*?(?=\n|$)',  # Remove "Centre Number: ..." up to newline or end
+        r'School Name\s*:?[\s\S]*?(?=\n|$)',  # Remove "School Name: ..." up to newline or end
+        r'Class\s*:?[\s\S]*?(?=\n|$)',  # Remove "Class: ..." up to newline or end
+        r'Subject\s*:?[\s\S]*?(?=\n|$)',  # Remove "Subject: ..." up to newline or end
+        r'Candidate No\.?\s*:?[\s\S]*?(?=\n|$)',  # Remove "Candidate No: ..." up to newline or end
+        r'Examiner.*?(?=\.|$)',  # Remove "Examiner..." up to period or end
+        r'Invigilator.*?(?=\.|$)',  # Remove "Invigilator..." up to period or end
+        r'Write your name.*?(?=\.|$)',  # Remove "Write your name..." up to period or end
+        r'Write your index number.*?(?=\.|$)',  # Remove "Write your index number..." up to period or end
+        r'Write in black or blue ink.*?(?=\.|$)',  # Remove "Write in black or blue ink..." up to period or end
+        r'Write legibly.*?(?=\.|$)',  # Remove "Write legibly..." up to period or end
+        r'Fill in the boxes.*?(?=\.|$)',  # Remove "Fill in the boxes..." up to period or end
+        r'Check that this question paper.*?(?=\.|$)',  # Remove "Check that this question paper..." up to period or end
+        r'You must not use.*?(?=\.|$)',  # Remove "You must not use..." up to period or end
+        r'You must answer on the question paper.*?(?=\.|$)',  # Remove "You must answer on the question paper..." up to period or end
+        r'You must answer on the answer booklet.*?(?=\.|$)',  # Remove "You must answer on the answer booklet..." up to period or end
+        r'You must answer on the separate answer sheet.*?(?=\.|$)',  # Remove "You must answer on the separate answer sheet..." up to period or end
+        r'You must answer all questions.*?(?=\.|$)',  # Remove "You must answer all questions..." up to period or end
+        r'You must answer only one question.*?(?=\.|$)',  # Remove "You must answer only one question..." up to period or end
+        r'You must answer two questions.*?(?=\.|$)',  # Remove "You must answer two questions..." up to period or end
+        r'You must answer three questions.*?(?=\.|$)',  # Remove "You must answer three questions..." up to period or end
+        r'You must answer four questions.*?(?=\.|$)',  # Remove "You must answer four questions..." up to period or end
+        r'You must answer five questions.*?(?=\.|$)',  # Remove "You must answer five questions..." up to period or end
+        r'You must answer six questions.*?(?=\.|$)',  # Remove "You must answer six questions..." up to period or end
+        r'You must answer seven questions.*?(?=\.|$)',  # Remove "You must answer seven questions..." up to period or end
+        r'You must answer eight questions.*?(?=\.|$)',  # Remove "You must answer eight questions..." up to period or end
+        r'You must answer nine questions.*?(?=\.|$)',  # Remove "You must answer nine questions..." up to period or end
+        r'You must answer ten questions.*?(?=\.|$)',  # Remove "You must answer ten questions..." up to period or end
+        r'You must answer eleven questions.*?(?=\.|$)',  # Remove "You must answer eleven questions..." up to period or end
+        r'You must answer twelve questions.*?(?=\.|$)',  # Remove "You must answer twelve questions..." up to period or end
+        r'You must answer thirteen questions.*?(?=\.|$)',  # Remove "You must answer thirteen questions..." up to period or end
+        r'You must answer fourteen questions.*?(?=\.|$)',  # Remove "You must answer fourteen questions..." up to period or end
+        r'You must answer fifteen questions.*?(?=\.|$)',  # Remove "You must answer fifteen questions..." up to period or end
+        r'You must answer sixteen questions.*?(?=\.|$)',  # Remove "You must answer sixteen questions..." up to period or end
+        r'You must answer seventeen questions.*?(?=\.|$)',  # Remove "You must answer seventeen questions..." up to period or end
+        r'You must answer eighteen questions.*?(?=\.|$)',  # Remove "You must answer eighteen questions..." up to period or end
+        r'You must answer nineteen questions.*?(?=\.|$)',  # Remove "You must answer nineteen questions..." up to period or end
+        r'You must answer twenty questions.*?(?=\.|$)',  # Remove "You must answer twenty questions..." up to period or end
+    ]
+    question_artifact_regex = re.compile("|".join(question_artifact_patterns), re.IGNORECASE)
 
     while idx < text_len:
         match = start_pattern.search(text, idx)
@@ -289,7 +378,6 @@ def extract_all_text_sequentially(text):
             if trailing_text and not trailing_text.startswith("$"):
                 content = (content + " " + trailing_text).strip()
 
-
         # 🔍 NEW: Capture question text immediately after $$END if it looks like a question
         if key == "question":
             lookahead_text = text[content_end:next_idx].strip()
@@ -313,7 +401,6 @@ def extract_all_text_sequentially(text):
                 lookahead_text = text[content_end:next_idx].strip()
                 if lookahead_text and question_like.search(lookahead_text):
                     content = (content + " " + lookahead_text).strip()
-
 
         # Save extracted range
         mapped_ranges.append((start_idx, content_end))
@@ -346,7 +433,6 @@ def extract_all_text_sequentially(text):
                 current["answer"] = content
             result.append(current)
             current = {}
-
 
         idx = next_idx
 
@@ -387,18 +473,19 @@ def extract_all_text_sequentially(text):
                 q_idx += 1
 
         # 🔹 Apply cleanup here
-        item["question"] = clean_text(item.get("question", ""))
-        item["answer"]   = clean_text(item.get("answer", ""))
+        # Clean up question artifacts
+        cleaned_question = clean_text(item.get("question", ""))
+        cleaned_question = question_artifact_regex.sub("", cleaned_question)
+        cleaned_question = re.sub(r"\s+", " ", cleaned_question).strip()
+
+        cleaned_answer = clean_text(item.get("answer", ""))
+
+        item["question"] = cleaned_question
+        item["answer"] = cleaned_answer
 
         final_result.append(item)
 
-        # final_result.append(item)
-
-        # cleaned_result = final_result.append(item)
-
     return final_result
-
-
 
 def extract_all_text_between_as_ae(text):
     if not isinstance(text, str):  # Ensure text is a string
