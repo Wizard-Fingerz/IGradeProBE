@@ -284,53 +284,67 @@ class PredictionService:
             question_text: str
         ) -> float:
         """
-        Compare list-type answers (list only, no explanations).
-        Returns similarity score (0–1) based on how many correct items the student provides,
-        normalized by the number of points asked in the question (or examiner+comprehension list if unspecified).
+        Compare list-type answers using sentence embeddings.
+        Returns similarity score (0–1) based on how many correct items student provides,
+        normalized by the number of expected points.
         """
 
         # --- Normalize examiner’s list ---
-        examiner_items = [x.strip().lower() for x in examiner_answer.split(",") if x.strip()]
+        examiner_items = [x.strip() for x in examiner_answer.replace("\n", ",").split(",") if x.strip()]
 
-        # --- Expand possible valid items from comprehension ---
-        # (Break comprehension into unique chunks/phrases, not just words)
-        comp_candidates = set()
-        for line in comprehension_text.replace("\n", " ").split("."):
-            # split into phrases by commas/dashes too
-            for chunk in line.replace(";", ",").split(","):
-                chunk = chunk.strip().lower()
-                if len(chunk.split()) > 1:  # ignore single words like 'the', 'and'
-                    comp_candidates.add(chunk)
+        # --- Comprehension as points ---
+        comp_items = [x.strip() for x in comprehension_text.replace("\n", ",").split(",") if x.strip()]
 
-        # --- Merge examiner and comprehension candidates ---
-        valid_items = set(examiner_items) | comp_candidates
+        # --- Normalize student’s list ---
+        student_items = [x.strip() for x in student_answer.replace("\n", ",").replace(";", ",").split(",") if x.strip()]
 
-        # --- Normalize student’s answer ---
-        raw_items = student_answer.replace("\n", ",").replace(";", ",").split(",")
-        student_items = [x.strip().lower() for x in raw_items if x.strip()]
+        # --- Encode everything ---
+        examiner_embs = sentence_model.encode(examiner_items, convert_to_tensor=True) if examiner_items else []
+        comp_embs = sentence_model.encode(comp_items, convert_to_tensor=True) if comp_items else []
+        student_embs = sentence_model.encode(student_items, convert_to_tensor=True) if student_items else []
 
-        # --- Matching logic ---
         correct = 0
         matched = set()
 
-        for s_item in student_items:
-            for v_item in valid_items:
-                if fuzz.token_set_ratio(s_item, v_item) >= 90 and v_item not in matched:
-                    correct += 1
-                    matched.add(v_item)
-                    break
+        # --- Matching logic ---
+        for i, s_emb in enumerate(student_embs):
+            best_sim = 0
+            best_match = None
 
-        # --- Figure out denominator (expected points) ---
+            # 1. Check similarity with examiner’s items
+            if len(examiner_embs) > 0:
+                sims_exam = util.cos_sim(s_emb, examiner_embs)[0]
+                best_exam_idx = int(sims_exam.argmax())
+                best_exam_sim = float(sims_exam[best_exam_idx])
+                if best_exam_sim > best_sim:
+                    best_sim = best_exam_sim
+                    best_match = ("examiner", best_exam_idx)
+
+            # 2. If not high enough, check comprehension
+            if len(comp_embs) > 0:
+                sims_comp = util.cos_sim(s_emb, comp_embs)[0]
+                best_comp_idx = int(sims_comp.argmax())
+                best_comp_sim = float(sims_comp[best_comp_idx])
+                if best_comp_sim > best_sim:
+                    best_sim = best_comp_sim
+                    best_match = ("comprehension", best_comp_idx)
+
+            # Threshold for considering it correct
+            if best_sim >= 0.7:  # tune threshold (0.65–0.75 works well)
+                if best_match not in matched:  # avoid duplicate matching
+                    correct += 1
+                    matched.add(best_match)
+
+        # --- Denominator: expected points ---
         expected_points = self.extract_expected_points(question_text)
         if not expected_points:
-            expected_points = len(examiner_items)  # stick to examiner list count, not comprehension
+            expected_points = len(examiner_items) if examiner_items else 1
 
         # --- Compute score ---
         score = min(correct / expected_points, 1.0)
 
         return score
 
-   
     def evaluate_answer(self, question, student_answer, examiner_answer, comprehension_items=None):
         """
         Automatically decides whether to use list similarity or text similarity
